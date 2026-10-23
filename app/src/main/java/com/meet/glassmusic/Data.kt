@@ -17,7 +17,7 @@ data class Track(val id: String, val title: String, val artist: String, val albu
 
 object Jamendo {
     // Free key: https://devportal.jamendo.com
-    private const val CLIENT_ID = "cdc39798f297b4e4defc441c59bac317"
+    private const val CLIENT_ID = "NEWID"
 
     suspend fun tracks(order: String = "popularity_week", query: String? = null): List<Track> =
         withContext(Dispatchers.IO) {
