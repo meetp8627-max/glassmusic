@@ -31,7 +31,7 @@ suspend fun searchSongs(query: String, limit: Int = 20): List<Song> = withContex
                         title = info.name,
                         artist = info.uploaderName,
                         thumbnail = info.thumbnails.firstOrNull()?.url ?: "",
-                        streamUrl = bestAudio.url,
+                        streamUrl = bestAudio.url ?: "",
                         duration = info.duration
                     )
                 } else null
