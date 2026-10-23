@@ -59,7 +59,7 @@ class MusicVM(app: Application) : AndroidViewModel(app) {
             try {
                 trending = Jamendo.tracks("popularity_week")
                 fresh = Jamendo.tracks("releasedate_desc")
-            } catch (e: Exception) { error = "Couldn't load music. Check your Jamendo client ID and internet." }
+            } catch (e: Exception) { error = "Load failed: " + e.toString() }
         }
     }
 
