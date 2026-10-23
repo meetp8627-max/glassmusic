@@ -24,7 +24,7 @@ object Jamendo {
             val u = StringBuilder("https://api.jamendo.com/v3.0/tracks/?client_id=$CLIENT_ID" +
                     "&format=json&limit=30&imagesize=500&audioformat=mp32&order=$order")
             if (query != null) u.append("&search=").append(URLEncoder.encode(query, "UTF-8"))
-            val root = JSONObject(URL(u.toString()).readText()); val arr = root.getJSONArray("results"); if (arr.length() == 0) throw Exception("empty")
+            val root = JSONObject(URL(u.toString()).readText()); val arr = root.getJSONArray("results"); if (arr.length() == 0) throw Exception("empty: " + root.toString().take(300))
             List(arr.length()) {
                 val o = arr.getJSONObject(it)
                 Track(o.getString("id"), o.getString("name"), o.getString("artist_name"),
