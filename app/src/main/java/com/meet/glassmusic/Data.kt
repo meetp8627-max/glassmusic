@@ -17,14 +17,14 @@ data class Track(val id: String, val title: String, val artist: String, val albu
 
 object Jamendo {
     // Free key: https://devportal.jamendo.com
-    private const val CLIENT_ID = "16f2e5c8"
+    private const val CLIENT_ID = "YOUR_JAMENDO_CLIENT_ID"
 
     suspend fun tracks(order: String = "popularity_week", query: String? = null): List<Track> =
         withContext(Dispatchers.IO) {
             val u = StringBuilder("https://api.jamendo.com/v3.0/tracks/?client_id=$CLIENT_ID" +
                     "&format=json&limit=30&imagesize=500&audioformat=mp32&order=$order")
             if (query != null) u.append("&search=").append(URLEncoder.encode(query, "UTF-8"))
-            val root = JSONObject(URL(u.toString()).readText()); val arr = root.getJSONArray("results"); if (arr.length() == 0) throw Exception("empty: " + root.toString().take(300))
+            val arr = JSONObject(URL(u.toString()).readText()).getJSONArray("results")
             List(arr.length()) {
                 val o = arr.getJSONObject(it)
                 Track(o.getString("id"), o.getString("name"), o.getString("artist_name"),
@@ -59,7 +59,7 @@ class MusicVM(app: Application) : AndroidViewModel(app) {
             try {
                 trending = Jamendo.tracks("popularity_week")
                 fresh = Jamendo.tracks("releasedate_desc")
-            } catch (e: Exception) { error = "Load failed: " + e.toString() }
+            } catch (e: Exception) { error = "Couldn't load music. Check your Jamendo client ID and internet." }
         }
     }
 

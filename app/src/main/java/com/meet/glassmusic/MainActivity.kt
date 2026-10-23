@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Accent)) { Surface(color = Color.Transparent, contentColor = Color.White) { App() } } }
+        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Accent)) { App() } }
     }
 }
 
