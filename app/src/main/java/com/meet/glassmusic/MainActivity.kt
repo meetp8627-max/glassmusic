@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -41,7 +42,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Accent)) { App() } }
+        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Accent)) { Surface(color = Color.Transparent, contentColor = Color.White) { App() } } }
     }
 }
 
@@ -179,7 +180,7 @@ fun TabBar(sel: Int, onSel: (Int) -> Unit) {
 @Composable
 fun NowPlaying(vm: MusicVM, close: () -> Unit) {
     val t = vm.current ?: return
-    val dur = (vm.player.duration.takeIf { it > 0 } ?: (t.durationSec * 1000L)).coerceAtLeast(1)
+    val dur = ((vm.player?.duration ?: 0L).takeIf { it > 0 } ?: (t.durationSec * 1000L)).coerceAtLeast(1)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AsyncImage(t.art, null, contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize().blur(90.dp).alpha(0.7f))

@@ -1,12 +1,15 @@
 package com.meet.glassmusic
 
 import android.app.Application
+import android.content.ComponentName
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.net.URL
@@ -16,8 +19,7 @@ data class Track(val id: String, val title: String, val artist: String, val albu
                  val art: String, val url: String, val durationSec: Int)
 
 object Jamendo {
-    // Free key: https://devportal.jamendo.com
-    private const val CLIENT_ID = "YOUR_JAMENDO_CLIENT_ID"
+    private const val CLIENT_ID = "16f2e5c8"
 
     suspend fun tracks(order: String = "popularity_week", query: String? = null): List<Track> =
         withContext(Dispatchers.IO) {
@@ -33,8 +35,10 @@ object Jamendo {
         }
 }
 
-class MusicVM(app: Application) : AndroidViewModel(app) {
-    val player: ExoPlayer = ExoPlayer.Builder(app).build()
+class MusicVM(private val app: Application) : AndroidViewModel(app) {
+    private var controller: MediaController? = null
+    val player: Player? get() = controller
+
     var queue by mutableStateOf(listOf<Track>())
     var current by mutableStateOf<Track?>(null)
     var playing by mutableStateOf(false)
@@ -48,36 +52,47 @@ class MusicVM(app: Application) : AndroidViewModel(app) {
     var error by mutableStateOf<String?>(null)
 
     init {
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
-            override fun onMediaItemTransition(m: MediaItem?, r: Int) {
-                current = queue.getOrNull(player.currentMediaItemIndex)
-            }
-        })
-        viewModelScope.launch { while (true) { pos = player.currentPosition; delay(400) } }
+        // Connect to the background playback service
+        val token = SessionToken(app, ComponentName(app, MusicService::class.java))
+        val future = MediaController.Builder(app, token).buildAsync()
+        future.addListener({
+            val c = future.get()
+            controller = c
+            playing = c.isPlaying
+            c.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+                override fun onMediaItemTransition(m: MediaItem?, r: Int) {
+                    current = queue.getOrNull(c.currentMediaItemIndex)
+                }
+            })
+        }, ContextCompat.getMainExecutor(app))
+
+        viewModelScope.launch { while (true) { pos = player?.currentPosition ?: 0L; delay(400) } }
+
         viewModelScope.launch {
-            try {
-                trending = Jamendo.tracks("popularity_week")
-                fresh = Jamendo.tracks("releasedate_desc")
-            } catch (e: Exception) { error = "Couldn't load music. Check your Jamendo client ID and internet." }
+            try { trending = Jamendo.tracks("popularity_week") } catch (e: Exception) { error = "Couldn't load music. Check your connection." }
+        }
+        viewModelScope.launch {
+            try { fresh = Jamendo.tracks("releasedate") } catch (e: Exception) { error = "Couldn't load new releases." }
         }
     }
 
     fun play(list: List<Track>, index: Int) {
+        val p = player ?: return
         queue = list
-        player.setMediaItems(list.map { MediaItem.fromUri(it.url) }, index, 0)
-        player.prepare(); player.play(); current = list[index]
+        p.setMediaItems(list.map { MediaItem.fromUri(it.url) }, index, 0)
+        p.prepare(); p.play(); current = list[index]
     }
-    fun toggle() { if (player.isPlaying) player.pause() else player.play() }
-    fun next() = player.seekToNextMediaItem()
-    fun prev() { if (player.currentPosition > 3000) player.seekTo(0) else player.seekToPreviousMediaItem() }
-    fun seek(ms: Long) { player.seekTo(ms); pos = ms }
-    fun toggleShuffle() { shuffle = !shuffle; player.shuffleModeEnabled = shuffle }
-    fun toggleRepeat() { repeat = !repeat; player.repeatMode = if (repeat) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF }
+    fun toggle() { player?.let { if (it.isPlaying) it.pause() else it.play() } }
+    fun next() { player?.seekToNextMediaItem() }
+    fun prev() { player?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem() } }
+    fun seek(ms: Long) { player?.seekTo(ms); pos = ms }
+    fun toggleShuffle() { shuffle = !shuffle; player?.shuffleModeEnabled = shuffle }
+    fun toggleRepeat() { repeat = !repeat; player?.repeatMode = if (repeat) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF }
     fun like(t: Track) { if (liked.any { it.id == t.id }) liked.removeAll { it.id == t.id } else liked.add(t) }
     fun isLiked(t: Track) = liked.any { it.id == t.id }
     fun search(q: String) = viewModelScope.launch {
         try { results = Jamendo.tracks("relevance", q) } catch (e: Exception) { error = "Search failed." }
     }
-    override fun onCleared() { player.release() }
+    override fun onCleared() { controller?.release() }
 }
