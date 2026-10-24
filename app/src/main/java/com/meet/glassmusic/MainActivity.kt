@@ -113,23 +113,41 @@ fun YtRow(v: YtVideo, vm: MusicVM, onClick: () -> Unit) {
 }
 
 @Composable
+fun HeroCard(t: Track, onPlay: () -> Unit) {
+    Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().aspectRatio(1f)
+        .clip(RoundedCornerShape(28.dp)).background(Color(0xFF2A2A33)).clickable(onClick = onPlay)) {
+        AsyncImage(t.art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.75f)))))
+        Column(Modifier.align(Alignment.BottomStart).padding(20.dp).fillMaxWidth(0.7f)) {
+            Text("FEATURED", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Accent)
+            Text(t.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(t.artist, fontSize = 15.sp, color = Color.White.copy(0.7f), maxLines = 1)
+        }
+        Glass(Modifier.align(Alignment.BottomEnd).padding(18.dp).size(58.dp), CircleShape) {
+            Icon(Icons.Filled.PlayArrow, null, Modifier.align(Alignment.Center).size(32.dp))
+        }
+    }
+}
+
+@Composable
 fun Home(vm: MusicVM) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
-        item { Text("Listen Now", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp)) }
-        vm.error?.let { item { Text(it, color = Accent, modifier = Modifier.padding(20.dp)) } }
-        item { Text("Trending this week", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, bottom = 10.dp)) }
+        item { Text("Listen Now", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
+        vm.error?.let { item { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) } }
+        vm.trending.firstOrNull()?.let { t -> item { HeroCard(t) { vm.play(vm.trending, 0) } } }
+        item { Text("Trending this week", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 12.dp)) }
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                itemsIndexed(vm.trending) { i, t ->
-                    Column(Modifier.width(160.dp).clickable { vm.play(vm.trending, i) }) {
-                        Art(t.art, 160, 18)
+                itemsIndexed(vm.trending.drop(1)) { i, t ->
+                    Column(Modifier.width(150.dp).clickable { vm.play(vm.trending, i + 1) }) {
+                        Art(t.art, 150, 20)
                         Text(t.title, Modifier.padding(top = 8.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(t.artist, color = Color.White.copy(0.6f), fontSize = 13.sp, maxLines = 1)
                     }
                 }
             }
         }
-        item { Text("New releases", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp)) }
+        item { Text("Popular this month", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 6.dp)) }
         itemsIndexed(vm.fresh) { i, t -> TrackRow(t, vm) { vm.play(vm.fresh, i) } }
     }
 }
@@ -138,30 +156,54 @@ fun Home(vm: MusicVM) {
 fun SearchScreen(vm: MusicVM) {
     var q by remember { mutableStateOf("") }
     var live by remember { mutableStateOf(false) }
+    val genres = listOf("Lofi", "Pop", "Rock", "Electronic", "Jazz", "Classical", "Hip Hop", "Ambient")
+    val tiles = listOf(
+        Color(0xFFFA7333) to Color(0xFFBF1A4D), Color(0xFF3380E6) to Color(0xFF6633B3),
+        Color(0xFF33BF8C) to Color(0xFF1A5980), Color(0xFFF2BF33) to Color(0xFFE65940),
+        Color(0xFF994DE6) to Color(0xFFE64D99))
+    val doSearch = { if (q.isNotBlank()) { if (YouTube.configured) vm.searchYt(q, live) else vm.searchJamendo(q) } }
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
         item {
-            Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
+            Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp))
             Glass(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), CircleShape) {
                 TextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    placeholder = { Text("Songs and artists on YouTube") },
+                    placeholder = { Text("Artists, songs, albums") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { vm.searchYt(q, live) }),
+                    keyboardActions = KeyboardActions(onSearch = { doSearch() }),
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
             }
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf(false to "Songs", true to "Live").forEach { (isLive, label) ->
-                    val on = live == isLive
-                    Text(label, color = if (on) Color.White else Color.White.copy(0.7f), fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clip(CircleShape)
-                            .background(if (on) Accent else Color.White.copy(0.12f))
-                            .clickable { live = isLive; if (q.isNotBlank()) vm.searchYt(q, live) }
-                            .padding(horizontal = 18.dp, vertical = 8.dp))
+            if (YouTube.configured) {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    listOf(false to "Songs", true to "Live").forEach { (isLive, label) ->
+                        val on = live == isLive
+                        Text(label, color = if (on) Color.White else Color.White.copy(0.7f), fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clip(CircleShape)
+                                .background(if (on) Accent else Color.White.copy(0.12f))
+                                .clickable { live = isLive; doSearch() }
+                                .padding(horizontal = 18.dp, vertical = 8.dp))
+                    }
+                }
+            } else Spacer(Modifier.height(16.dp))
+            vm.searchError?.let { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
+        }
+        if (vm.results.isEmpty() && vm.ytResults.isEmpty()) {
+            item { Text("Browse categories", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 12.dp)) }
+            items(genres.chunked(2).size) { r ->
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    genres.chunked(2)[r].forEachIndexed { k, g ->
+                        val (c1, c2) = tiles[(r * 2 + k) % tiles.size]
+                        Box(Modifier.weight(1f).aspectRatio(1.6f).clip(RoundedCornerShape(18.dp))
+                            .background(Brush.linearGradient(listOf(c1, c2)))
+                            .clickable { q = g; vm.searchJamendo(g) }) {
+                            Text(g, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(14.dp))
+                        }
+                    }
                 }
             }
-            vm.error?.let { Text(it, color = Accent, modifier = Modifier.padding(horizontal = 20.dp)) }
         }
+        itemsIndexed(vm.results) { i, t -> TrackRow(t, vm) { vm.play(vm.results, i) } }
         itemsIndexed(vm.ytResults) { _, v -> YtRow(v, vm) { vm.playYt(v) } }
     }
 }

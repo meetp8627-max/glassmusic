@@ -25,10 +25,11 @@ data class YtVideo(val id: String, val title: String, val channel: String, val a
 object Jamendo {
     private const val CLIENT_ID = "16f2e5c8"
 
-    suspend fun tracks(order: String = "popularity_week"): List<Track> =
+    suspend fun tracks(order: String = "popularity_week", query: String? = null): List<Track> =
         withContext(Dispatchers.IO) {
             val u = "https://api.jamendo.com/v3.0/tracks/?client_id=$CLIENT_ID" +
-                    "&format=json&limit=30&imagesize=500&audioformat=mp32&order=$order"
+                    "&format=json&limit=30&imagesize=500&audioformat=mp32&order=$order" +
+                    (if (query != null) "&search=" + URLEncoder.encode(query, "UTF-8") else "")
             val arr = JSONObject(URL(u).readText()).getJSONArray("results")
             List(arr.length()) {
                 val o = arr.getJSONObject(it)
@@ -76,6 +77,8 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     var ytResults by mutableStateOf(listOf<YtVideo>())
     var ytVideo by mutableStateOf<YtVideo?>(null)
     var error by mutableStateOf<String?>(null)
+    var searchError by mutableStateOf<String?>(null)
+    var results by mutableStateOf(listOf<Track>())
     val savedYt = mutableStateListOf<YtVideo>()
     private val prefs = app.getSharedPreferences("library", Context.MODE_PRIVATE)
 
@@ -123,7 +126,7 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
             try { trending = Jamendo.tracks("popularity_week") } catch (e: Exception) { error = "Couldn't load music. Check your connection." }
         }
         viewModelScope.launch {
-            try { fresh = Jamendo.tracks("releasedate") } catch (e: Exception) { error = "Couldn't load new releases." }
+            try { fresh = Jamendo.tracks("popularity_month") } catch (e: Exception) { error = "Couldn't load more songs." }
         }
     }
 
@@ -145,9 +148,13 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     fun isLiked(t: Track) = liked.any { it.id == t.id }
 
     fun searchYt(q: String, live: Boolean = false) = viewModelScope.launch {
-        if (!YouTube.configured) { error = "Add your YouTube API key in Data.kt"; return@launch }
-        try { ytResults = YouTube.search(q, live); error = null }
-        catch (e: Exception) { error = "YouTube search failed. Check your API key." }
+        if (!YouTube.configured) { searchError = "Add your YouTube API key in Data.kt"; return@launch }
+        try { ytResults = YouTube.search(q, live); results = emptyList(); searchError = null }
+        catch (e: Exception) { searchError = "YouTube search failed. Check your API key." }
+    }
+    fun searchJamendo(q: String) = viewModelScope.launch {
+        try { results = Jamendo.tracks("relevance", q); ytResults = emptyList(); searchError = if (results.isEmpty()) "No songs found." else null }
+        catch (e: Exception) { searchError = "Search failed. Check your connection." }
     }
     fun playYt(v: YtVideo) { player?.pause(); ytVideo = v }
     fun closeYt() { ytVideo = null }
