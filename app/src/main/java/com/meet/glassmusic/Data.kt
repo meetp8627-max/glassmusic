@@ -1,45 +1,156 @@
 package com.meet.glassmusic
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.stream.StreamInfo
+import android.app.Application
+import android.content.ComponentName
+import android.content.Context
+import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import kotlinx.coroutines.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URL
+import java.net.URLEncoder
 
-data class Song(
-    val title: String,
-    val artist: String,
-    val thumbnail: String,
-    val streamUrl: String,
-    val duration: Long = 0
-)
+data class Track(val id: String, val title: String, val artist: String, val album: String,
+                 val art: String, val url: String, val durationSec: Int)
 
-suspend fun searchSongs(query: String, limit: Int = 20): List<Song> = withContext(Dispatchers.IO) {
-    try {
-        val service = ServiceList.YouTube
-        val searchExtractor = service.getSearchExtractor(query, listOf("music_songs"), "")
-        searchExtractor.fetchPage()
+data class YtVideo(val id: String, val title: String, val channel: String, val art: String)
 
-        val items = searchExtractor.initialPage.items.take(limit)
+object Jamendo {
+    private const val CLIENT_ID = "16f2e5c8"
 
-        items.mapNotNull { item ->
-            try {
-                val info = StreamInfo.getInfo(item.url)
-                val bestAudio = info.audioStreams.maxByOrNull { it.averageBitrate }
-
-                if (bestAudio != null) {
-                    Song(
-                        title = info.name,
-                        artist = info.uploaderName,
-                        thumbnail = info.thumbnails.firstOrNull()?.url ?: "",
-                        streamUrl = bestAudio.url ?: "",
-                        duration = info.duration
-                    )
-                } else null
-            } catch (e: Exception) {
-                null
+    suspend fun tracks(order: String = "popularity_week"): List<Track> =
+        withContext(Dispatchers.IO) {
+            val u = "https://api.jamendo.com/v3.0/tracks/?client_id=$CLIENT_ID" +
+                    "&format=json&limit=30&imagesize=500&audioformat=mp32&order=$order"
+            val arr = JSONObject(URL(u).readText()).getJSONArray("results")
+            List(arr.length()) {
+                val o = arr.getJSONObject(it)
+                Track(o.getString("id"), o.getString("name"), o.getString("artist_name"),
+                    o.getString("album_name"), o.optString("image"), o.getString("audio"), o.getInt("duration"))
             }
         }
-    } catch (e: Exception) {
-        emptyList()
+}
+
+object YouTube {
+    // Free key: console.cloud.google.com > enable "YouTube Data API v3" > Credentials > Create API key
+    private const val KEY = "PASTE_YOUTUBE_KEY"
+    val configured: Boolean get() = KEY != "PASTE_YOUTUBE_KEY"
+
+    private fun clean(s: String) = s.replace("&amp;", "&").replace("&#39;", "'").replace("&quot;", "\"")
+
+    suspend fun search(q: String, live: Boolean = false): List<YtVideo> = withContext(Dispatchers.IO) {
+        val filter = if (live) "&eventType=live" else "&videoCategoryId=10"
+        val url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video" +
+                filter + "&maxResults=25&q=" + URLEncoder.encode(q, "UTF-8") + "&key=" + KEY
+        val arr = JSONObject(URL(url).readText()).getJSONArray("items")
+        List(arr.length()) {
+            val o = arr.getJSONObject(it)
+            val s = o.getJSONObject("snippet")
+            YtVideo(o.getJSONObject("id").getString("videoId"), clean(s.getString("title")),
+                clean(s.getString("channelTitle")),
+                s.getJSONObject("thumbnails").getJSONObject("medium").getString("url"))
+        }
     }
+}
+
+class MusicVM(private val app: Application) : AndroidViewModel(app) {
+    private var controller: MediaController? = null
+    val player: Player? get() = controller
+
+    var queue by mutableStateOf(listOf<Track>())
+    var current by mutableStateOf<Track?>(null)
+    var playing by mutableStateOf(false)
+    var pos by mutableLongStateOf(0L)
+    var shuffle by mutableStateOf(false)
+    var repeat by mutableStateOf(false)
+    val liked = mutableStateListOf<Track>()
+    var trending by mutableStateOf(listOf<Track>())
+    var fresh by mutableStateOf(listOf<Track>())
+    var ytResults by mutableStateOf(listOf<YtVideo>())
+    var ytVideo by mutableStateOf<YtVideo?>(null)
+    var error by mutableStateOf<String?>(null)
+    val savedYt = mutableStateListOf<YtVideo>()
+    private val prefs = app.getSharedPreferences("library", Context.MODE_PRIVATE)
+
+    private fun persist() {
+        val a = JSONArray()
+        liked.forEach { t -> a.put(JSONObject().put("id", t.id).put("title", t.title).put("artist", t.artist)
+            .put("album", t.album).put("art", t.art).put("url", t.url).put("dur", t.durationSec)) }
+        val b = JSONArray()
+        savedYt.forEach { v -> b.put(JSONObject().put("id", v.id).put("title", v.title)
+            .put("channel", v.channel).put("art", v.art)) }
+        prefs.edit().putString("liked", a.toString()).putString("yt", b.toString()).apply()
+    }
+
+    private fun restore() {
+        try {
+            val a = JSONArray(prefs.getString("liked", "[]"))
+            for (i in 0 until a.length()) { val o = a.getJSONObject(i)
+                liked.add(Track(o.getString("id"), o.getString("title"), o.getString("artist"),
+                    o.getString("album"), o.getString("art"), o.getString("url"), o.getInt("dur"))) }
+            val b = JSONArray(prefs.getString("yt", "[]"))
+            for (i in 0 until b.length()) { val o = b.getJSONObject(i)
+                savedYt.add(YtVideo(o.getString("id"), o.getString("title"), o.getString("channel"), o.getString("art"))) }
+        } catch (e: Exception) { }
+    }
+
+    init {
+        restore()
+        val token = SessionToken(app, ComponentName(app, MusicService::class.java))
+        val future = MediaController.Builder(app, token).buildAsync()
+        future.addListener({
+            val c = future.get()
+            controller = c
+            playing = c.isPlaying
+            c.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+                override fun onMediaItemTransition(m: MediaItem?, r: Int) {
+                    current = queue.getOrNull(c.currentMediaItemIndex)
+                }
+            })
+        }, ContextCompat.getMainExecutor(app))
+
+        viewModelScope.launch { while (true) { pos = player?.currentPosition ?: 0L; delay(400) } }
+
+        viewModelScope.launch {
+            try { trending = Jamendo.tracks("popularity_week") } catch (e: Exception) { error = "Couldn't load music. Check your connection." }
+        }
+        viewModelScope.launch {
+            try { fresh = Jamendo.tracks("releasedate") } catch (e: Exception) { error = "Couldn't load new releases." }
+        }
+    }
+
+    fun play(list: List<Track>, index: Int) {
+        val p = player ?: return
+        queue = list
+        p.setMediaItems(list.map { MediaItem.fromUri(it.url) }, index, 0)
+        p.prepare(); p.play(); current = list[index]
+    }
+    fun toggle() { player?.let { if (it.isPlaying) it.pause() else it.play() } }
+    fun next() { player?.seekToNextMediaItem() }
+    fun prev() { player?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem() } }
+    fun seek(ms: Long) { player?.seekTo(ms); pos = ms }
+    fun toggleShuffle() { shuffle = !shuffle; player?.shuffleModeEnabled = shuffle }
+    fun toggleRepeat() { repeat = !repeat; player?.repeatMode = if (repeat) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF }
+    fun like(t: Track) { if (liked.any { it.id == t.id }) liked.removeAll { it.id == t.id } else liked.add(t); persist() }
+    fun toggleYt(v: YtVideo) { if (savedYt.any { it.id == v.id }) savedYt.removeAll { it.id == v.id } else savedYt.add(v); persist() }
+    fun isSavedYt(v: YtVideo) = savedYt.any { it.id == v.id }
+    fun isLiked(t: Track) = liked.any { it.id == t.id }
+
+    fun searchYt(q: String, live: Boolean = false) = viewModelScope.launch {
+        if (!YouTube.configured) { error = "Add your YouTube API key in Data.kt"; return@launch }
+        try { ytResults = YouTube.search(q, live); error = null }
+        catch (e: Exception) { error = "YouTube search failed. Check your API key." }
+    }
+    fun playYt(v: YtVideo) { player?.pause(); ytVideo = v }
+    fun closeYt() { ytVideo = null }
+
+    override fun onCleared() { controller?.release() }
 }
