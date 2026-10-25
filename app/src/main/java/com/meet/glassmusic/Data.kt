@@ -74,7 +74,7 @@ object NewPipe {
         override fun execute(request: Request): Response {
             val rb = client.newCall(okhttp3.Request.Builder()
                 .url(request.url())
-                .apply { request.headers().forEach { (k, v) -> addHeader(k, v) } }
+                .apply { request.headers().forEach { (k, v) -> v.forEach { addHeader(k, it) } } }
                 .build()).execute()
             return Response(rb.code, rb.message, rb.headers.toMultimap(), rb.body?.string(), rb.request.url.toString())
         }
@@ -83,17 +83,17 @@ object NewPipe {
 
     suspend fun search(q: String): List<YtVideo> = withContext(Dispatchers.IO) {
         val service = ServiceList.YouTube
-        val extractor = service.getSearchExtractor(q, listOf(), "")
+        val extractor = service.getSearchExtractor(q)
         extractor.fetchPage()
         extractor.initialPage.items.map { item ->
-            val info = item as? org.schabi.newpipe.extractor.search.SearchInfoItem
+            val info = item as? org.schabi.newpipe.extractor.stream.StreamInfoItem
             YtVideo(info?.url?.substringAfter("watch?v=") ?: "", info?.name ?: "",
                 info?.uploaderName ?: "", info?.thumbnailUrl ?: "")
         }
     }
 
     suspend fun audioUrl(videoUrl: String): String? = withContext(Dispatchers.IO) {
-        val info = StreamInfo.getInfo(service = ServiceList.YouTube, url = videoUrl)
+        val info = StreamInfo.getInfo(videoUrl)
         info.audioStreams.maxByOrNull { it.averageBitrate }?.content
     }
 }
