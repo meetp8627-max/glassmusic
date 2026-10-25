@@ -88,7 +88,7 @@ object NewPipe {
         extractor.initialPage.items.map { item ->
             val info = item as? org.schabi.newpipe.extractor.stream.StreamInfoItem
             YtVideo(info?.url?.substringAfter("watch?v=") ?: "", info?.name ?: "",
-                info?.uploaderName ?: "", info?.thumbnailUrl ?: "")
+                info?.uploaderName ?: "", info?.thumbnails?.firstOrNull()?.url ?: "")
         }
     }
 
