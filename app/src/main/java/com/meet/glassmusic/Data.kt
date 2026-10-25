@@ -185,9 +185,16 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     fun isLiked(t: Track) = liked.any { it.id == t.id }
 
     fun searchYt(q: String, live: Boolean = false) = viewModelScope.launch {
-        if (!YouTube.configured) { searchError = "Add your YouTube API key in Data.kt"; return@launch }
-        try { ytResults = YouTube.search(q, live); results = emptyList(); searchError = null }
-        catch (e: Exception) { searchError = "YouTube search failed. Check your API key." }
+        try {
+            if (YouTube.configured) {
+                ytResults = YouTube.search(q, live)
+            } else {
+                ytResults = NewPipe.search(q)
+            }
+            results = emptyList(); searchError = null
+        } catch (e: Exception) {
+            searchError = "YouTube search failed: ${e.message}"
+        }
     }
     fun searchJamendo(q: String) = viewModelScope.launch {
         try { results = Jamendo.tracks("relevance", q); ytResults = emptyList(); searchError = if (results.isEmpty()) "No songs found." else null }
