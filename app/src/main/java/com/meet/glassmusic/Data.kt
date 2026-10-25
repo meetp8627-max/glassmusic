@@ -16,6 +16,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
+import okhttp3.OkHttpClient
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.downloader.Downloader
+import org.schabi.newpipe.extractor.downloader.Request
+import org.schabi.newpipe.extractor.downloader.Response
+import org.schabi.newpipe.extractor.stream.StreamInfo
 
 data class Track(val id: String, val title: String, val artist: String, val album: String,
                  val art: String, val url: String, val durationSec: Int)
@@ -58,6 +65,36 @@ object YouTube {
                 clean(s.getString("channelTitle")),
                 s.getJSONObject("thumbnails").getJSONObject("medium").getString("url"))
         }
+    }
+}
+
+object NewPipe {
+    private val client = OkHttpClient()
+    private val downloader = object : Downloader() {
+        override fun execute(request: Request): Response {
+            val rb = client.newCall(okhttp3.Request.Builder()
+                .url(request.url())
+                .apply { request.headers().forEach { (k, v) -> addHeader(k, v) } }
+                .build()).execute()
+            return Response(rb.code, rb.message, rb.headers.toMultimap(), rb.body?.string(), rb.request.url.toString())
+        }
+    }
+    init { NewPipe.init(downloader) }
+
+    suspend fun search(q: String): List<YtVideo> = withContext(Dispatchers.IO) {
+        val service = ServiceList.YouTube
+        val extractor = service.getSearchExtractor(q, listOf(), "")
+        extractor.fetchPage()
+        extractor.initialPage.items.map { item ->
+            val info = item as? org.schabi.newpipe.extractor.search.SearchInfoItem
+            YtVideo(info?.url?.substringAfter("watch?v=") ?: "", info?.name ?: "",
+                info?.uploaderName ?: "", info?.thumbnailUrl ?: "")
+        }
+    }
+
+    suspend fun audioUrl(videoUrl: String): String? = withContext(Dispatchers.IO) {
+        val info = StreamInfo.getInfo(service = ServiceList.YouTube, url = videoUrl)
+        info.audioStreams.maxByOrNull { it.averageBitrate }?.content
     }
 }
 
