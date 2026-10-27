@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -277,19 +278,19 @@ fun MiniPlayer(vm: MusicVM, backdrop: LayerBackdrop, open: () -> Unit) {
 @Composable
 fun TabBar(sel: Int, backdrop: LayerBackdrop, onSel: (Int) -> Unit) {
     val items = listOf(Icons.Filled.PlayCircle to "Listen Now", Icons.Filled.Search to "Search", Icons.Filled.LibraryMusic to "Library")
-    GlassSurface(backdrop, Modifier.fillMaxWidth(), CircleShape) {
-        Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            items.forEachIndexed { i, (icon, label) ->
-                val on = i == sel
-                Column(
-                    Modifier.weight(1f).clip(CircleShape)
-                        .background(if (on) Color.White.copy(0.14f) else Color.Transparent)
-                        .clickable { onSel(i) }.padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(icon, label, tint = if (on) Accent else Color.White.copy(0.7f))
-                    Text(label, fontSize = 11.sp, color = if (on) Accent else Color.White.copy(0.7f))
-                }
+    LiquidBottomTabs(
+        selectedTabIndex = { sel },
+        onTabSelected = onSel,
+        backdrop = backdrop,
+        tabsCount = items.size,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        items.forEachIndexed { i, (icon, label) ->
+            val scale = LocalLiquidBottomTabScale.current
+            LiquidBottomTab({ onSel(i) }) {
+                Icon(icon, label, tint = Color.White,
+                    modifier = Modifier.size(26.dp).graphicsLayer { val s = scale(); scaleX = s; scaleY = s })
+                Text(label, fontSize = 11.sp, color = Color.White, maxLines = 1)
             }
         }
     }

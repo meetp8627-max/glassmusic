@@ -1,6 +1,5 @@
 package com.meet.glassmusic
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -29,7 +28,7 @@ fun Glass(
     Box(
         modifier
             .clip(shape)
-            .background(Color(0xFF1B1B22).copy(alpha = 0.94f))
+            .background(Color(0xFF1B1B22).copy(alpha = 0.72f))
             .background(tint)
             .background(Brush.verticalGradient(listOf(Color.White.copy(0.20f), Color.White.copy(0.05f))))
             .border(
@@ -41,7 +40,7 @@ fun Glass(
     )
 }
 
-/** Real liquid glass (blur + lens refraction) on Android 13+, frosted fallback on older phones. */
+/** Liquid glass (blur + lens refraction) from the Backdrop library. */
 @Composable
 fun GlassSurface(
     backdrop: LayerBackdrop,
@@ -49,21 +48,17 @@ fun GlassSurface(
     shape: Shape = RoundedCornerShape(28.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    if (Build.VERSION.SDK_INT >= 33) {
-        Box(
-            modifier.drawBackdrop(
-                backdrop = backdrop,
-                shape = { shape },
-                effects = {
-                    vibrancy()
-                    blur(8.dp.toPx())
-                    lens(refractionHeight = 14.dp.toPx(), refractionAmount = 28.dp.toPx())
-                },
-                onDrawSurface = { drawRect(Color.White.copy(alpha = 0.10f)) }
-            ),
-            content = content
-        )
-    } else {
-        Glass(modifier, shape, content = content)
-    }
+    Box(
+        modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                blur(8.dp.toPx())
+                lens(16.dp.toPx(), 24.dp.toPx())
+            },
+            onDrawSurface = { drawRect(Color.Black.copy(alpha = 0.35f)) }
+        ),
+        content = content
+    )
 }
