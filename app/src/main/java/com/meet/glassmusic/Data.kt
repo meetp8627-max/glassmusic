@@ -16,13 +16,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
-import okhttp3.OkHttpClient
-import org.schabi.newpipe.extractor.NewPipe
-import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.downloader.Downloader
-import org.schabi.newpipe.extractor.downloader.Request
-import org.schabi.newpipe.extractor.downloader.Response
-import org.schabi.newpipe.extractor.stream.StreamInfo
 
 data class Track(val id: String, val title: String, val artist: String, val album: String,
                  val art: String, val url: String, val durationSec: Int)
@@ -65,36 +58,6 @@ object YouTube {
                 clean(s.getString("channelTitle")),
                 s.getJSONObject("thumbnails").getJSONObject("medium").getString("url"))
         }
-    }
-}
-
-object NewPipe {
-    private val client = OkHttpClient()
-    private val downloader = object : Downloader() {
-        override fun execute(request: Request): Response {
-            val rb = client.newCall(okhttp3.Request.Builder()
-                .url(request.url())
-                .apply { request.headers().forEach { (k, v) -> v.forEach { addHeader(k, it) } } }
-                .build()).execute()
-            return Response(rb.code, rb.message, rb.headers.toMultimap(), rb.body?.string(), rb.request.url.toString())
-        }
-    }
-    init { NewPipe.init(downloader) }
-
-    suspend fun search(q: String): List<YtVideo> = withContext(Dispatchers.IO) {
-        val service = ServiceList.YouTube
-        val extractor = service.getSearchExtractor(q)
-        extractor.fetchPage()
-        extractor.initialPage.items.map { item ->
-            val info = item as? org.schabi.newpipe.extractor.stream.StreamInfoItem
-            YtVideo(info?.url?.substringAfter("watch?v=") ?: "", info?.name ?: "",
-                info?.uploaderName ?: "", info?.thumbnails?.firstOrNull()?.url ?: "")
-        }
-    }
-
-    suspend fun audioUrl(videoUrl: String): String? = withContext(Dispatchers.IO) {
-        val info = StreamInfo.getInfo(videoUrl)
-        info.audioStreams.maxByOrNull { it.averageBitrate }?.content
     }
 }
 
@@ -185,16 +148,9 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     fun isLiked(t: Track) = liked.any { it.id == t.id }
 
     fun searchYt(q: String, live: Boolean = false) = viewModelScope.launch {
-        try {
-            if (YouTube.configured) {
-                ytResults = YouTube.search(q, live)
-            } else {
-                ytResults = NewPipe.search(q)
-            }
-            results = emptyList(); searchError = null
-        } catch (e: Exception) {
-            searchError = "YouTube search failed: ${e.message}"
-        }
+        if (!YouTube.configured) { searchError = "Add your YouTube API key in Data.kt"; return@launch }
+        try { ytResults = YouTube.search(q, live); results = emptyList(); searchError = null }
+        catch (e: Exception) { searchError = "YouTube search failed. Check your API key." }
     }
     fun searchJamendo(q: String) = viewModelScope.launch {
         try { results = Jamendo.tracks("relevance", q); ytResults = emptyList(); searchError = if (results.isEmpty()) "No songs found." else null }

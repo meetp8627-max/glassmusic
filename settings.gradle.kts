@@ -1,4 +1,4 @@
 pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-dependencyResolutionManagement { repositories { google(); mavenCentral(); maven("https://jitpack.io") } }
+dependencyResolutionManagement { repositories { google(); mavenCentral() } }
 rootProject.name = "GlassMusic"
 include(":app")
