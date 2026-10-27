@@ -1,5 +1,6 @@
 package com.meet.glassmusic
 
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,8 +12,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 
-/** Liquid-glass surface: dark frosted base, white sheen, specular rim light. */
+/** Frosted fallback (also used where there is no backdrop to sample). */
 @Composable
 fun Glass(
     modifier: Modifier = Modifier,
@@ -33,4 +39,31 @@ fun Glass(
             ),
         content = content
     )
+}
+
+/** Real liquid glass (blur + lens refraction) on Android 13+, frosted fallback on older phones. */
+@Composable
+fun GlassSurface(
+    backdrop: LayerBackdrop,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(28.dp),
+    content: @Composable BoxScope.() -> Unit
+) {
+    if (Build.VERSION.SDK_INT >= 33) {
+        Box(
+            modifier.drawBackdrop(
+                backdrop = backdrop,
+                shape = { shape },
+                effects = {
+                    vibrancy()
+                    blur(8.dp.toPx())
+                    lens(refractionHeight = 14.dp.toPx(), refractionAmount = 28.dp.toPx())
+                },
+                onDrawSurface = { drawRect(Color.White.copy(alpha = 0.10f)) }
+            ),
+            content = content
+        )
+    } else {
+        Glass(modifier, shape, content = content)
+    }
 }

@@ -37,6 +37,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 val Accent = Color(0xFFFA2D48)
 
@@ -57,14 +60,18 @@ fun App(vm: MusicVM = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
     var full by remember { mutableStateOf(false) }
     BackHandler(full) { full = false }
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF3A1020), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
-        when (tab) { 0 -> Home(vm); 1 -> SearchScreen(vm); else -> Library(vm) }
+    val backdrop = rememberLayerBackdrop()
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)
+            .background(Brush.verticalGradient(listOf(Color(0xFF3A1020), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
+            when (tab) { 0 -> Home(vm); 1 -> SearchScreen(vm); else -> Library(vm) }
+        }
         Column(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            vm.current?.let { MiniPlayer(vm) { full = true } }
-            TabBar(tab) { tab = it }
+            vm.current?.let { MiniPlayer(vm, backdrop) { full = true } }
+            TabBar(tab, backdrop) { tab = it }
         }
         AnimatedVisibility(full, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
             NowPlaying(vm) { full = false }
@@ -252,9 +259,9 @@ fun ytHtml(id: String) = """<html><body style="margin:0;background:#000;height:1
 frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></body></html>"""
 
 @Composable
-fun MiniPlayer(vm: MusicVM, open: () -> Unit) {
+fun MiniPlayer(vm: MusicVM, backdrop: LayerBackdrop, open: () -> Unit) {
     val t = vm.current ?: return
-    Glass(Modifier.fillMaxWidth().clickable(onClick = open), RoundedCornerShape(26.dp)) {
+    GlassSurface(backdrop, Modifier.fillMaxWidth().clickable(onClick = open), RoundedCornerShape(26.dp)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Art(t.art, 46, 14)
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
@@ -268,9 +275,9 @@ fun MiniPlayer(vm: MusicVM, open: () -> Unit) {
 }
 
 @Composable
-fun TabBar(sel: Int, onSel: (Int) -> Unit) {
+fun TabBar(sel: Int, backdrop: LayerBackdrop, onSel: (Int) -> Unit) {
     val items = listOf(Icons.Filled.PlayCircle to "Listen Now", Icons.Filled.Search to "Search", Icons.Filled.LibraryMusic to "Library")
-    Glass(Modifier.fillMaxWidth(), CircleShape) {
+    GlassSurface(backdrop, Modifier.fillMaxWidth(), CircleShape) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             items.forEachIndexed { i, (icon, label) ->
                 val on = i == sel
@@ -297,9 +304,12 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
         val g1 = glow[Math.abs(t.id.hashCode()) % glow.size]
         val g2 = glow[(Math.abs(t.id.hashCode()) + 1) % glow.size]
         val g3 = glow[(Math.abs(t.id.hashCode()) + 4) % glow.size]
+        val bd = rememberLayerBackdrop()
+        Box(Modifier.fillMaxSize().layerBackdrop(bd).background(Color.Black)) {
         Box(Modifier.offset(x = (-90).dp, y = 40.dp).size(420.dp).background(Brush.radialGradient(listOf(g1.copy(alpha = 0.55f), Color.Transparent))))
         Box(Modifier.offset(x = 110.dp, y = 330.dp).size(400.dp).background(Brush.radialGradient(listOf(g2.copy(alpha = 0.5f), Color.Transparent))))
         Box(Modifier.offset(x = (-60).dp, y = 520.dp).size(380.dp).background(Brush.radialGradient(listOf(g3.copy(alpha = 0.45f), Color.Transparent))))
+        }
         Column(Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.padding(top = 12.dp).width(42.dp).height(5.dp).clip(CircleShape)
@@ -326,7 +336,7 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
                 Text("-" + fmt(dur - vm.pos), fontSize = 12.sp, color = Color.White.copy(0.6f))
             }
             Spacer(Modifier.height(16.dp))
-            Glass(Modifier.fillMaxWidth(), CircleShape) {
+            GlassSurface(bd, Modifier.fillMaxWidth(), CircleShape) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     IconButton({ vm.toggleShuffle() }) { Icon(Icons.Filled.Shuffle, null, tint = if (vm.shuffle) Accent else Color.White) }
                     IconButton({ vm.prev() }) { Icon(Icons.Filled.SkipPrevious, null, Modifier.size(40.dp)) }
