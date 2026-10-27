@@ -29,7 +29,7 @@ fun Glass(
     Box(
         modifier
             .clip(shape)
-            .background(Color(0xFF1B1B22).copy(alpha = 0.72f))
+            .background(Color(0xFF1B1B22).copy(alpha = 0.94f))
             .background(tint)
             .background(Brush.verticalGradient(listOf(Color.White.copy(0.20f), Color.White.copy(0.05f))))
             .border(
