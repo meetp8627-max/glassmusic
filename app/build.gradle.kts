@@ -7,7 +7,7 @@ plugins {
 }
 android {
     namespace = "com.meet.glassmusic"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig { applicationId = "com.meet.glassmusic"; minSdk = 26; targetSdk = 34; versionCode = 1; versionName = "1.0" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
