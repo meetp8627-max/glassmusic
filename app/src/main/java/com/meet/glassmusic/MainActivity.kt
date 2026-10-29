@@ -137,13 +137,64 @@ fun HeroCard(t: Track, onPlay: () -> Unit) {
     }
 }
 
+val MixColors = listOf(
+    Color(0xFFFA7333) to Color(0xFFBF1A4D), Color(0xFF3380E6) to Color(0xFF6633B3),
+    Color(0xFF33BF8C) to Color(0xFF1A5980), Color(0xFFF2BF33) to Color(0xFFE65940))
+
+@Composable
+fun SectionTitle(s: String) =
+    Text(s, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 12.dp))
+
+@Composable
+fun MixCard(name: String, i: Int, onClick: () -> Unit) {
+    val (c1, c2) = MixColors[i % MixColors.size]
+    Box(Modifier.size(width = 210.dp, height = 140.dp).clip(RoundedCornerShape(22.dp))
+        .background(Brush.linearGradient(listOf(c1, c2))).clickable(onClick = onClick)) {
+        Text("MADE FOR YOU", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(0.75f),
+            modifier = Modifier.padding(16.dp))
+        Text(name, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(16.dp))
+    }
+}
+
+@Composable
+fun ChartCard(vm: MusicVM) {
+    val top = vm.trending.take(5)
+    Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
+        .background(Brush.linearGradient(listOf(Color(0xFFFA2D48), Color(0xFFC2185B)))).padding(18.dp)) {
+        Text("Top 5", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Trending this week", fontSize = 13.sp, color = Color.White.copy(0.75f), modifier = Modifier.padding(bottom = 10.dp))
+        top.forEachIndexed { i, t ->
+            Row(Modifier.fillMaxWidth().clickable { vm.play(vm.trending, i) }.padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${i + 1}", fontWeight = FontWeight.Bold, modifier = Modifier.width(22.dp))
+                Art(t.art, 40, 8)
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(t.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(t.artist, fontSize = 12.sp, color = Color.White.copy(0.75f), maxLines = 1)
+                }
+                Icon(Icons.Filled.PlayArrow, null, Modifier.size(24.dp))
+            }
+        }
+    }
+}
+
 @Composable
 fun Home(vm: MusicVM) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
         item { Text("Home", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
-        vm.error?.let { item { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) } }
+        vm.error?.let { item { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.clickable { vm.load() }.padding(horizontal = 20.dp, vertical = 6.dp)) } }
+        if (vm.trending.isEmpty() && vm.error == null) item { Text("Loading…", color = Color.White.copy(0.6f), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
         vm.trending.firstOrNull()?.let { t -> item { HeroCard(t) { vm.play(vm.trending, 0) } } }
-        item { Text("Trending this week", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 12.dp)) }
+        if (vm.mixes.isNotEmpty()) {
+            item { SectionTitle("Made for You") }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    itemsIndexed(vm.mixes) { i, mix -> MixCard(mix.first, i) { vm.play(mix.second, 0) } }
+                }
+            }
+        }
+        if (vm.trending.size >= 5) { item { Spacer(Modifier.height(26.dp)); ChartCard(vm) } }
+        item { SectionTitle("Trending this week") }
         item {
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 itemsIndexed(vm.trending.drop(1)) { i, t ->
@@ -155,7 +206,21 @@ fun Home(vm: MusicVM) {
                 }
             }
         }
-        item { Text("Popular this month", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 6.dp)) }
+        if (vm.recent.isNotEmpty()) {
+            item { SectionTitle("Recently Played") }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    itemsIndexed(vm.recent.toList()) { i, t ->
+                        Column(Modifier.width(130.dp).clickable { vm.play(vm.recent.toList(), i) }) {
+                            Art(t.art, 130, 18)
+                            Text(t.title, Modifier.padding(top = 8.dp), fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(t.artist, color = Color.White.copy(0.6f), fontSize = 12.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+        item { SectionTitle("Popular this month") }
         itemsIndexed(vm.fresh) { i, t -> TrackRow(t, vm) { vm.play(vm.fresh, i) } }
     }
 }
@@ -165,6 +230,10 @@ fun NewScreen(vm: MusicVM) {
     val rows = vm.trending.chunked(2)
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
         item { Text("New", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
+        if (vm.trending.isEmpty()) item {
+            Text(vm.error ?: "Loading…", color = if (vm.error != null) Accent else Color.White.copy(0.6f),
+                modifier = Modifier.clickable { if (vm.error != null) vm.load() }.padding(horizontal = 20.dp, vertical = 8.dp))
+        }
         item { Text("Top picks", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, bottom = 10.dp)) }
         items(rows.size) { r ->
             Row(Modifier.padding(horizontal = 20.dp, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -337,6 +406,7 @@ fun TabBar(sel: Int, backdrop: LayerBackdrop, onSel: (Int) -> Unit) {
 @Composable
 fun NowPlaying(vm: MusicVM, close: () -> Unit) {
     val t = vm.current ?: return
+    var showQueue by remember { mutableStateOf(false) }
     val dur = ((vm.player?.duration ?: 0L).takeIf { it > 0 } ?: (t.durationSec * 1000L)).coerceAtLeast(1)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val glow = listOf(Color(0xFFFA7333), Color(0xFF3380E6), Color(0xFF33BF8C), Color(0xFFF2BF33), Color(0xFF994DE6))
@@ -353,10 +423,29 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.padding(top = 12.dp).width(42.dp).height(5.dp).clip(CircleShape)
                 .background(Color.White.copy(0.5f)).clickable(onClick = close))
-            Spacer(Modifier.weight(1f))
-            AsyncImage(t.art, null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(30.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)))
-            Spacer(Modifier.height(28.dp))
+            if (showQueue) {
+                Text("Continue Playing", fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp))
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    itemsIndexed(vm.queue) { i, q ->
+                        val now = q.id == t.id
+                        Row(Modifier.fillMaxWidth().clickable { vm.playAt(i) }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Art(q.art, 46, 10)
+                            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                Text(q.title, fontWeight = FontWeight.SemiBold, color = if (now) Accent else Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(q.artist, fontSize = 12.sp, color = Color.White.copy(0.6f), maxLines = 1)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            } else {
+                Spacer(Modifier.weight(1f))
+                AsyncImage(t.art, null, contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f).shadow(30.dp, RoundedCornerShape(26.dp)).clip(RoundedCornerShape(26.dp)))
+                Spacer(Modifier.height(28.dp))
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(t.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -384,7 +473,12 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
                     IconButton({ vm.toggleRepeat() }) { Icon(Icons.Filled.Repeat, null, tint = if (vm.repeat) Accent else Color.White) }
                 }
             }
-            Spacer(Modifier.weight(1.2f))
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+                IconButton({ showQueue = !showQueue }) {
+                    Icon(Icons.Filled.QueueMusic, "Queue", tint = if (showQueue) Accent else Color.White)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
         }
     }
 }
