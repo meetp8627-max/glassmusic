@@ -65,7 +65,7 @@ fun App(vm: MusicVM = viewModel()) {
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)
             .background(Brush.verticalGradient(listOf(Color(0xFF3A1020), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
-            when (tab) { 0 -> Home(vm); 1 -> SearchScreen(vm); else -> Library(vm) }
+            when (tab) { 0 -> Home(vm); 1 -> NewScreen(vm); 2 -> RadioScreen(); 3 -> Library(vm); else -> SearchScreen(vm) }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp),
@@ -140,7 +140,7 @@ fun HeroCard(t: Track, onPlay: () -> Unit) {
 @Composable
 fun Home(vm: MusicVM) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
-        item { Text("Listen Now", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
+        item { Text("Home", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
         vm.error?.let { item { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) } }
         vm.trending.firstOrNull()?.let { t -> item { HeroCard(t) { vm.play(vm.trending, 0) } } }
         item { Text("Trending this week", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 12.dp)) }
@@ -157,6 +157,44 @@ fun Home(vm: MusicVM) {
         }
         item { Text("Popular this month", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 26.dp, bottom = 6.dp)) }
         itemsIndexed(vm.fresh) { i, t -> TrackRow(t, vm) { vm.play(vm.fresh, i) } }
+    }
+}
+
+@Composable
+fun NewScreen(vm: MusicVM) {
+    val rows = vm.trending.chunked(2)
+    LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
+        item { Text("New", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
+        item { Text("Top picks", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, bottom = 10.dp)) }
+        items(rows.size) { r ->
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                rows[r].forEachIndexed { k, t ->
+                    Column(Modifier.weight(1f).clickable { vm.play(vm.trending, r * 2 + k) }) {
+                        AsyncImage(t.art, null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp)).background(Color(0xFF2A2A33)))
+                        Text(t.title, Modifier.padding(top = 8.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(t.artist, color = Color.White.copy(0.6f), fontSize = 13.sp, maxLines = 1)
+                    }
+                }
+                if (rows[r].size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        item { Text("Popular this month", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 6.dp)) }
+        itemsIndexed(vm.fresh) { i, t -> TrackRow(t, vm) { vm.play(vm.fresh, i) } }
+    }
+}
+
+@Composable
+fun RadioScreen() {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Text("Radio", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp))
+        Glass(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), RoundedCornerShape(26.dp)) {
+            Column(Modifier.padding(24.dp)) {
+                Icon(Icons.Filled.Radio, null, Modifier.size(36.dp), tint = Accent)
+                Text("Live stations", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+                Text("Free live radio is coming in the next update.", color = Color.White.copy(0.65f), modifier = Modifier.padding(top = 6.dp))
+            }
+        }
     }
 }
 
@@ -277,7 +315,7 @@ fun MiniPlayer(vm: MusicVM, backdrop: LayerBackdrop, open: () -> Unit) {
 
 @Composable
 fun TabBar(sel: Int, backdrop: LayerBackdrop, onSel: (Int) -> Unit) {
-    val items = listOf(Icons.Filled.PlayCircle to "Listen Now", Icons.Filled.Search to "Search", Icons.Filled.LibraryMusic to "Library")
+    val items = listOf(Icons.Filled.Home to "Home", Icons.Filled.GridView to "New", Icons.Filled.Radio to "Radio", Icons.Filled.LibraryMusic to "Library", Icons.Filled.Search to "Search")
     LiquidBottomTabs(
         selectedTabIndex = { sel },
         onTabSelected = onSel,
@@ -289,8 +327,8 @@ fun TabBar(sel: Int, backdrop: LayerBackdrop, onSel: (Int) -> Unit) {
             val scale = LocalLiquidBottomTabScale.current
             LiquidBottomTab({ onSel(i) }) {
                 Icon(icon, label, tint = Color.White,
-                    modifier = Modifier.size(26.dp).graphicsLayer { val s = scale(); scaleX = s; scaleY = s })
-                Text(label, fontSize = 11.sp, color = Color.White, maxLines = 1)
+                    modifier = Modifier.size(24.dp).graphicsLayer { val s = scale(); scaleX = s; scaleY = s })
+                Text(label, fontSize = 10.sp, color = Color.White, maxLines = 1)
             }
         }
     }
