@@ -43,6 +43,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 val Accent = Color(0xFFFA2D48)
+val LocalOpenArtist = staticCompositionLocalOf<(String) -> Unit> { {} }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,10 +63,12 @@ fun App(vm: MusicVM = viewModel()) {
     var full by remember { mutableStateOf(false) }
     BackHandler(full) { full = false }
     val backdrop = rememberLayerBackdrop()
+    CompositionLocalProvider(LocalOpenArtist provides { name: String -> full = false; vm.openArtist(name) }) {
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().layerBackdrop(backdrop)
             .background(Brush.verticalGradient(listOf(Color(0xFF3A1020), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
-            when (tab) { 0 -> Home(vm); 1 -> NewScreen(vm); 2 -> RadioScreen(); 3 -> Library(vm); else -> SearchScreen(vm) }
+            when (tab) { 0 -> Home(vm); 1 -> NewScreen(vm); 2 -> RadioScreen(vm); 3 -> Library(vm); else -> SearchScreen(vm) }
+            if (vm.artistName != null) ArtistScreen(vm)
         }
         Column(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp),
@@ -79,6 +82,7 @@ fun App(vm: MusicVM = viewModel()) {
         }
         vm.ytVideo?.let { v -> YtPlayer(v) { vm.closeYt() } }
     }
+    }
 }
 
 @Composable
@@ -89,12 +93,14 @@ fun Art(url: String, size: Int, radius: Int = 12) = AsyncImage(
 
 @Composable
 fun TrackRow(t: Track, vm: MusicVM, onClick: () -> Unit) {
+    val openArtist = LocalOpenArtist.current
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Art(t.art, 54)
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
             Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(t.artist, color = Color.White.copy(0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(t.artist, color = Color.White.copy(0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = if (t.id.startsWith("radio:")) Modifier else Modifier.clickable { openArtist(t.artist) })
         }
         IconButton({ vm.like(t) }) {
             Icon(if (vm.isLiked(t)) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, null,
@@ -254,15 +260,75 @@ fun NewScreen(vm: MusicVM) {
 }
 
 @Composable
-fun RadioScreen() {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Text("Radio", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp))
-        Glass(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), RoundedCornerShape(26.dp)) {
-            Column(Modifier.padding(24.dp)) {
-                Icon(Icons.Filled.Radio, null, Modifier.size(36.dp), tint = Accent)
-                Text("Live stations", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-                Text("Free live radio is coming in the next update.", color = Color.White.copy(0.65f), modifier = Modifier.padding(top = 6.dp))
+fun RadioScreen(vm: MusicVM) {
+    var q by remember { mutableStateOf("") }
+    var sel by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { if (vm.stations.isEmpty()) vm.loadRadio() }
+    val chips = listOf("Top" to null, "Hindi" to "hindi", "Bollywood" to "bollywood", "Pop" to "pop", "Lofi" to "lofi", "News" to "news", "Jazz" to "jazz")
+    LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
+        item {
+            Text("Radio", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp))
+            Glass(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), CircleShape) {
+                TextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    placeholder = { Text("Search live stations") },
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { sel = -1; vm.loadRadio(name = q) }),
+                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
             }
+            Spacer(Modifier.height(12.dp))
+        }
+        item {
+            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                itemsIndexed(chips) { i, chip ->
+                    val on = sel == i
+                    Text(chip.first, fontWeight = FontWeight.SemiBold, color = if (on) Color.White else Color.White.copy(0.7f),
+                        modifier = Modifier.clip(CircleShape)
+                            .background(if (on) Accent else Color.White.copy(0.12f))
+                            .clickable { sel = i; vm.loadRadio(tag = chip.second) }
+                            .padding(horizontal = 18.dp, vertical = 8.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        vm.radioStatus?.let { s -> item { Text(s, color = Color.White.copy(0.6f), modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) } }
+        itemsIndexed(vm.stations) { i, s -> TrackRow(s, vm) { vm.play(vm.stations, i) } }
+    }
+}
+
+@Composable
+fun ArtistScreen(vm: MusicVM) {
+    val name = vm.artistName ?: return
+    BackHandler { vm.closeArtist() }
+    val tracks = vm.artistTracks
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF3A1020), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 220.dp)) {
+            item {
+                Box(Modifier.fillMaxWidth().height(380.dp)) {
+                    tracks.firstOrNull()?.let {
+                        AsyncImage(it.art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    }
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(0.15f), Color(0xFF0B0B10)))))
+                    Text(name, fontSize = 36.sp, fontWeight = FontWeight.Bold, maxLines = 2,
+                        modifier = Modifier.align(Alignment.BottomStart).padding(20.dp))
+                }
+            }
+            item {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(64.dp).clip(CircleShape).background(Accent)
+                        .clickable { if (tracks.isNotEmpty()) vm.play(tracks, 0) }, contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.PlayArrow, null, Modifier.size(36.dp))
+                    }
+                    Text(if (vm.artistLoading) "Loading…" else "${tracks.size} songs", color = Color.White.copy(0.6f))
+                }
+            }
+            item { SectionTitle("Top Songs") }
+            itemsIndexed(tracks) { i, t -> TrackRow(t, vm) { vm.play(tracks, i) } }
+        }
+        Glass(Modifier.statusBarsPadding().padding(16.dp).size(44.dp).clickable { vm.closeArtist() }, CircleShape) {
+            Icon(Icons.Filled.ArrowBackIosNew, "Back", Modifier.align(Alignment.Center).size(18.dp))
         }
     }
 }
@@ -407,6 +473,7 @@ fun TabBar(sel: Int, backdrop: LayerBackdrop, onSel: (Int) -> Unit) {
 fun NowPlaying(vm: MusicVM, close: () -> Unit) {
     val t = vm.current ?: return
     var showQueue by remember { mutableStateOf(false) }
+    val openArtist = LocalOpenArtist.current
     val dur = ((vm.player?.duration ?: 0L).takeIf { it > 0 } ?: (t.durationSec * 1000L)).coerceAtLeast(1)
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val glow = listOf(Color(0xFFFA7333), Color(0xFF3380E6), Color(0xFF33BF8C), Color(0xFFF2BF33), Color(0xFF994DE6))
@@ -449,19 +516,24 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(t.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(t.artist, fontSize = 18.sp, color = Color.White.copy(0.65f), maxLines = 1)
+                    Text(t.artist, fontSize = 18.sp, color = Color.White.copy(0.65f), maxLines = 1,
+                        modifier = if (t.id.startsWith("radio:")) Modifier else Modifier.clickable { openArtist(t.artist) })
                 }
                 IconButton({ vm.like(t) }) {
                     Icon(if (vm.isLiked(t)) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, null,
                         tint = if (vm.isLiked(t)) Accent else Color.White)
                 }
             }
+            if (t.durationSec > 0) {
             Slider(value = vm.pos.toFloat().coerceIn(0f, dur.toFloat()), onValueChange = { vm.seek(it.toLong()) },
                 valueRange = 0f..dur.toFloat(),
                 colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.25f)))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(fmt(vm.pos), fontSize = 12.sp, color = Color.White.copy(0.6f))
                 Text("-" + fmt(dur - vm.pos), fontSize = 12.sp, color = Color.White.copy(0.6f))
+            }
+            } else {
+                Text("● LIVE", color = Accent, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 30.dp))
             }
             Spacer(Modifier.height(16.dp))
             GlassSurface(bd, Modifier.fillMaxWidth(), CircleShape) {

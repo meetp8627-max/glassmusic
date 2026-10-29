@@ -25,11 +25,12 @@ data class YtVideo(val id: String, val title: String, val channel: String, val a
 object Jamendo {
     private const val CLIENT_ID = "16f2e5c8"
 
-    suspend fun tracks(order: String = "popularity_week", query: String? = null): List<Track> =
+    suspend fun tracks(order: String = "popularity_week", query: String? = null, artist: String? = null): List<Track> =
         withContext(Dispatchers.IO) {
             val u = "https://api.jamendo.com/v3.0/tracks/?client_id=$CLIENT_ID" +
                     "&format=json&limit=30&imagesize=500&audioformat=mp32&order=$order" +
-                    (if (query != null) "&search=" + URLEncoder.encode(query, "UTF-8") else "")
+                    (if (query != null) "&search=" + URLEncoder.encode(query, "UTF-8") else "") +
+                    (if (artist != null) "&artist_name=" + URLEncoder.encode(artist, "UTF-8") else "")
             val arr = JSONObject(URL(u).readText()).getJSONArray("results")
             List(arr.length()) {
                 val o = arr.getJSONObject(it)
@@ -37,6 +38,38 @@ object Jamendo {
                     o.getString("album_name"), o.optString("image"), o.getString("audio"), o.getInt("duration"))
             }
         }
+}
+
+object RadioBrowser {
+    private val hosts = listOf("de1", "de2", "fi1")
+
+    suspend fun search(tag: String?, name: String?): List<Track> = withContext(Dispatchers.IO) {
+        val q = StringBuilder("/json/stations/search?order=clickcount&reverse=true&limit=40&hidebroken=true&is_https=true")
+        if (tag != null) q.append("&tag=").append(URLEncoder.encode(tag, "UTF-8"))
+        if (!name.isNullOrBlank()) q.append("&name=").append(URLEncoder.encode(name, "UTF-8"))
+        if (tag == null && name.isNullOrBlank()) {
+            val cc = java.util.Locale.getDefault().country
+            if (cc.isNotEmpty()) q.append("&countrycode=").append(cc)
+        }
+        var last: Exception? = null
+        for (h in hosts) {
+            try {
+                val conn = URL("https://$h.api.radio-browser.info$q").openConnection() as java.net.HttpURLConnection
+                conn.setRequestProperty("User-Agent", "GlassMusic/1.0")
+                conn.connectTimeout = 8000
+                conn.readTimeout = 10000
+                val arr = JSONArray(conn.inputStream.bufferedReader().readText())
+                return@withContext List(arr.length()) {
+                    val o = arr.getJSONObject(it)
+                    val tags = o.optString("tags").split(",").firstOrNull { t -> t.isNotBlank() }?.trim()
+                    Track("radio:" + o.optString("stationuuid"), o.optString("name").trim(),
+                        tags ?: o.optString("country"), o.optString("country"),
+                        o.optString("favicon"), o.optString("url_resolved"), 0)
+                }.filter { it.url.isNotEmpty() && it.title.isNotEmpty() }
+            } catch (e: Exception) { last = e }
+        }
+        throw last ?: Exception("radio")
+    }
 }
 
 object YouTube {
@@ -80,6 +113,11 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     var searchError by mutableStateOf<String?>(null)
     var results by mutableStateOf(listOf<Track>())
     val savedYt = mutableStateListOf<YtVideo>()
+    var stations by mutableStateOf(listOf<Track>())
+    var radioStatus by mutableStateOf<String?>(null)
+    var artistName by mutableStateOf<String?>(null)
+    var artistTracks by mutableStateOf(listOf<Track>())
+    var artistLoading by mutableStateOf(false)
     var mixes by mutableStateOf(listOf<Pair<String, List<Track>>>())
     val recent = mutableStateListOf<Track>()
     private val prefs = app.getSharedPreferences("library", Context.MODE_PRIVATE)
@@ -162,6 +200,26 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
             } catch (e: Exception) { }
         }
     }
+
+    fun loadRadio(tag: String? = null, name: String? = null) {
+        radioStatus = "Loading…"
+        viewModelScope.launch {
+            try {
+                val r = RadioBrowser.search(tag, name)
+                stations = r
+                radioStatus = if (r.isEmpty()) "No stations found." else null
+            } catch (e: Exception) { radioStatus = "Couldn't load stations. Pick a tag to retry." }
+        }
+    }
+
+    fun openArtist(n: String) {
+        artistName = n; artistTracks = emptyList(); artistLoading = true
+        viewModelScope.launch {
+            try { artistTracks = Jamendo.tracks("popularity_total", null, n) } catch (e: Exception) { }
+            artistLoading = false
+        }
+    }
+    fun closeArtist() { artistName = null }
 
     fun playAt(i: Int) {
         val p = player ?: return
