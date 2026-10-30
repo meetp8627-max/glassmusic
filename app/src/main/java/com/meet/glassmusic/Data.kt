@@ -127,9 +127,9 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     var speed by mutableFloatStateOf(1f)
     private var sleepJob: Job? = null
 
-    fun setAmbient(b: Boolean) { ambient = b; prefs.edit().putBoolean("ambient", b).apply() }
-    fun setShowRecent(b: Boolean) { showRecent = b; prefs.edit().putBoolean("showRecent", b).apply() }
-    fun setSpeed(s: Float) { speed = s; player?.setPlaybackSpeed(s) }
+    fun toggleAmbient(b: Boolean) { ambient = b; prefs.edit().putBoolean("ambient", b).apply() }
+    fun toggleShowRecent(b: Boolean) { showRecent = b; prefs.edit().putBoolean("showRecent", b).apply() }
+    fun changeSpeed(s: Float) { speed = s; player?.setPlaybackSpeed(s) }
     fun setSleep(min: Int) {
         sleepMinutes = min
         sleepJob?.cancel()

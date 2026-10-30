@@ -658,13 +658,13 @@ fun SettingsScreen(vm: MusicVM, onClose: () -> Unit) {
                 item {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Animated background", fontSize = 17.sp, modifier = Modifier.weight(1f))
-                        PrismalGlassToggle(selected = { vm.ambient }, onSelect = { vm.setAmbient(it) }, backdrop = pb)
+                        PrismalGlassToggle(selected = { vm.ambient }, onSelect = { vm.toggleAmbient(it) }, backdrop = pb)
                     }
                 }
                 item {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Show Recently Played", fontSize = 17.sp, modifier = Modifier.weight(1f))
-                        PrismalGlassToggle(selected = { vm.showRecent }, onSelect = { vm.setShowRecent(it) }, backdrop = pb)
+                        PrismalGlassToggle(selected = { vm.showRecent }, onSelect = { vm.toggleShowRecent(it) }, backdrop = pb)
                     }
                 }
                 item { Text("Sleep timer", fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 10.dp)) }
@@ -680,7 +680,7 @@ fun SettingsScreen(vm: MusicVM, onClose: () -> Unit) {
                     PrismalHorizontalSelector(
                         labels = speeds.map { if (it == 1f) "1x" else "${it}x" },
                         selectedIndex = speeds.indexOf(vm.speed).coerceAtLeast(0),
-                        onSelected = { vm.setSpeed(speeds[it]) },
+                        onSelected = { vm.changeSpeed(speeds[it]) },
                         backdrop = pb, textStyle = label, textColor = Color.White, modifier = Modifier.fillMaxWidth()
                     )
                 }
