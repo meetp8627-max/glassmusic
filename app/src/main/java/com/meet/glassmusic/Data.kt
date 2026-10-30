@@ -121,6 +121,31 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     var mixes by mutableStateOf(listOf<Pair<String, List<Track>>>())
     val recent = mutableStateListOf<Track>()
     private val prefs = app.getSharedPreferences("library", Context.MODE_PRIVATE)
+    var ambient by mutableStateOf(prefs.getBoolean("ambient", true))
+    var showRecent by mutableStateOf(prefs.getBoolean("showRecent", true))
+    var sleepMinutes by mutableIntStateOf(0)
+    var speed by mutableFloatStateOf(1f)
+    private var sleepJob: Job? = null
+
+    fun setAmbient(b: Boolean) { ambient = b; prefs.edit().putBoolean("ambient", b).apply() }
+    fun setShowRecent(b: Boolean) { showRecent = b; prefs.edit().putBoolean("showRecent", b).apply() }
+    fun setSpeed(s: Float) { speed = s; player?.setPlaybackSpeed(s) }
+    fun setSleep(min: Int) {
+        sleepMinutes = min
+        sleepJob?.cancel()
+        if (min > 0) sleepJob = viewModelScope.launch {
+            delay(min * 60_000L)
+            player?.pause()
+            sleepMinutes = 0
+        }
+    }
+    fun playNext(t: Track) {
+        val p = player ?: return
+        if (queue.isEmpty()) { play(listOf(t), 0); return }
+        val at = (p.currentMediaItemIndex + 1).coerceAtMost(queue.size)
+        queue = queue.toMutableList().also { it.add(at, t) }
+        p.addMediaItem(at, MediaItem.fromUri(t.url))
+    }
 
     private fun persist() {
         val a = JSONArray()

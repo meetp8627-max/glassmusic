@@ -2,3 +2,4 @@ pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal()
 dependencyResolutionManagement { repositories { google(); mavenCentral() } }
 rootProject.name = "GlassMusic"
 include(":app")
+include(":prismal")

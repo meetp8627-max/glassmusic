@@ -38,12 +38,34 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.text.TextStyle
+import com.styropyr0.prismal.components.PrismalGlassMenu
+import com.styropyr0.prismal.components.PrismalGlassMenuDivider
+import com.styropyr0.prismal.components.PrismalGlassMenuItem
+import com.styropyr0.prismal.components.PrismalGlassProgressBar
+import com.styropyr0.prismal.components.PrismalGlassSlider
+import com.styropyr0.prismal.components.PrismalGlassToggle
+import com.styropyr0.prismal.components.PrismalHorizontalSelector
+import com.styropyr0.prismal.components.PrismalRulerSelector
+import com.styropyr0.prismal.components.PrismalSegmentedControl
+import com.styropyr0.prismal.components.prismalMenuAnchor
+import com.styropyr0.prismal.sources.PrismalGlassLayer
+import com.styropyr0.prismal.sources.prismalGlassLayer
+import com.styropyr0.prismal.sources.rememberPrismalGlassLayer
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 val Accent = Color(0xFFFA2D48)
 val LocalOpenArtist = staticCompositionLocalOf<(String) -> Unit> { {} }
+val LocalPrismal = staticCompositionLocalOf<PrismalGlassLayer?> { null }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,12 +85,15 @@ fun App(vm: MusicVM = viewModel()) {
     var full by remember { mutableStateOf(false) }
     BackHandler(full) { full = false }
     val backdrop = rememberLayerBackdrop()
-    CompositionLocalProvider(LocalOpenArtist provides { name: String -> full = false; vm.openArtist(name) }) {
+    val prismal = rememberPrismalGlassLayer()
+    var showSettings by remember { mutableStateOf(false) }
+    CompositionLocalProvider(LocalOpenArtist provides { name: String -> full = false; vm.openArtist(name) }, LocalPrismal provides prismal) {
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)
-            .background(Brush.verticalGradient(listOf(Color(0xFF3A1020), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
-            when (tab) { 0 -> Home(vm); 1 -> NewScreen(vm); 2 -> RadioScreen(vm); 3 -> Library(vm); else -> SearchScreen(vm) }
+        Box(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+            AmbientBackground(vm, Modifier.fillMaxSize().prismalGlassLayer(prismal))
+            when (tab) { 0 -> Home(vm) { showSettings = true }; 1 -> NewScreen(vm); 2 -> RadioScreen(vm); 3 -> Library(vm); else -> SearchScreen(vm) }
             if (vm.artistName != null) ArtistScreen(vm)
+            if (showSettings) SettingsScreen(vm) { showSettings = false }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp),
@@ -94,6 +119,9 @@ fun Art(url: String, size: Int, radius: Int = 12) = AsyncImage(
 @Composable
 fun TrackRow(t: Track, vm: MusicVM, onClick: () -> Unit) {
     val openArtist = LocalOpenArtist.current
+    val pb = LocalPrismal.current
+    var menu by remember { mutableStateOf(false) }
+    var anchor by remember { mutableStateOf(Rect.Zero) }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Art(t.art, 54)
@@ -101,6 +129,20 @@ fun TrackRow(t: Track, vm: MusicVM, onClick: () -> Unit) {
             Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(t.artist, color = Color.White.copy(0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = if (t.id.startsWith("radio:")) Modifier else Modifier.clickable { openArtist(t.artist) })
+        }
+        IconButton({ menu = true }, Modifier.prismalMenuAnchor { anchor = it }) {
+            Icon(Icons.Filled.MoreVert, "More", tint = Color.White.copy(0.6f))
+        }
+        if (pb != null) PrismalGlassMenu(
+            expanded = menu, onDismissRequest = { menu = false }, anchorBounds = anchor, backdrop = pb,
+            surfaceColor = Color(0xFF2A2A33).copy(alpha = 0.85f)
+        ) {
+            PrismalGlassMenuItem("Play next", { vm.playNext(t); menu = false }, textColor = Color.White)
+            PrismalGlassMenuItem(if (vm.isLiked(t)) "Remove from Library" else "Add to Library", { vm.like(t); menu = false }, textColor = Color.White)
+            if (!t.id.startsWith("radio:")) {
+                PrismalGlassMenuDivider()
+                PrismalGlassMenuItem("Go to artist", { menu = false; openArtist(t.artist) }, textColor = Color.White)
+            }
         }
         IconButton({ vm.like(t) }) {
             Icon(if (vm.isLiked(t)) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, null,
@@ -185,11 +227,20 @@ fun ChartCard(vm: MusicVM) {
 }
 
 @Composable
-fun Home(vm: MusicVM) {
+fun Home(vm: MusicVM, onSettings: () -> Unit = {}) {
+    val pb = LocalPrismal.current
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
-        item { Text("Home", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
+        item {
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 20.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Home", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onSettings) { Icon(Icons.Filled.Settings, "Settings", tint = Color.White.copy(0.8f)) }
+            }
+        }
         vm.error?.let { item { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.clickable { vm.load() }.padding(horizontal = 20.dp, vertical = 6.dp)) } }
-        if (vm.trending.isEmpty() && vm.error == null) item { Text("Loading…", color = Color.White.copy(0.6f), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+        if (vm.trending.isEmpty() && vm.error == null) item {
+            if (pb != null) PrismalGlassProgressBar(progress = { 0f }, backdrop = pb, indeterminate = true,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth())
+        }
         vm.trending.firstOrNull()?.let { t -> item { HeroCard(t) { vm.play(vm.trending, 0) } } }
         if (vm.mixes.isNotEmpty()) {
             item { SectionTitle("Made for You") }
@@ -212,7 +263,7 @@ fun Home(vm: MusicVM) {
                 }
             }
         }
-        if (vm.recent.isNotEmpty()) {
+        if (vm.recent.isNotEmpty() && vm.showRecent) {
             item { SectionTitle("Recently Played") }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -234,11 +285,14 @@ fun Home(vm: MusicVM) {
 @Composable
 fun NewScreen(vm: MusicVM) {
     val rows = vm.trending.chunked(2)
+    val pb = LocalPrismal.current
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
         item { Text("New", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp)) }
         if (vm.trending.isEmpty()) item {
-            Text(vm.error ?: "Loading…", color = if (vm.error != null) Accent else Color.White.copy(0.6f),
-                modifier = Modifier.clickable { if (vm.error != null) vm.load() }.padding(horizontal = 20.dp, vertical = 8.dp))
+            if (vm.error != null) Text(vm.error ?: "", color = Accent,
+                modifier = Modifier.clickable { vm.load() }.padding(horizontal = 20.dp, vertical = 8.dp))
+            else if (pb != null) PrismalGlassProgressBar(progress = { 0f }, backdrop = pb, indeterminate = true,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth())
         }
         item { Text("Top picks", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, bottom = 10.dp)) }
         items(rows.size) { r ->
@@ -261,6 +315,7 @@ fun NewScreen(vm: MusicVM) {
 
 @Composable
 fun RadioScreen(vm: MusicVM) {
+    val pb = LocalPrismal.current
     var q by remember { mutableStateOf("") }
     var sel by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { if (vm.stations.isEmpty()) vm.loadRadio() }
@@ -273,26 +328,28 @@ fun RadioScreen(vm: MusicVM) {
                     placeholder = { Text("Search live stations") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { sel = -1; vm.loadRadio(name = q) }),
+                    keyboardActions = KeyboardActions(onSearch = { vm.loadRadio(name = q) }),
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
             }
             Spacer(Modifier.height(12.dp))
         }
         item {
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                itemsIndexed(chips) { i, chip ->
-                    val on = sel == i
-                    Text(chip.first, fontWeight = FontWeight.SemiBold, color = if (on) Color.White else Color.White.copy(0.7f),
-                        modifier = Modifier.clip(CircleShape)
-                            .background(if (on) Accent else Color.White.copy(0.12f))
-                            .clickable { sel = i; vm.loadRadio(tag = chip.second) }
-                            .padding(horizontal = 18.dp, vertical = 8.dp))
-                }
-            }
+            if (pb != null) PrismalHorizontalSelector(
+                labels = chips.map { it.first }, selectedIndex = sel,
+                onSelected = { if (it != sel) { sel = it; vm.loadRadio(tag = chips[it].second) } },
+                backdrop = pb, textStyle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold), textColor = Color.White,
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(Modifier.height(8.dp))
         }
-        vm.radioStatus?.let { s -> item { Text(s, color = Color.White.copy(0.6f), modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) } }
+        vm.radioStatus?.let { s ->
+            item {
+                if (s == "Loading…" && pb != null) PrismalGlassProgressBar(progress = { 0f }, backdrop = pb, indeterminate = true,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth())
+                else Text(s, color = Color.White.copy(0.6f), modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+            }
+        }
         itemsIndexed(vm.stations) { i, s -> TrackRow(s, vm) { vm.play(vm.stations, i) } }
     }
 }
@@ -335,6 +392,7 @@ fun ArtistScreen(vm: MusicVM) {
 
 @Composable
 fun SearchScreen(vm: MusicVM) {
+    val pb = LocalPrismal.current
     var q by remember { mutableStateOf("") }
     var live by remember { mutableStateOf(false) }
     val genres = listOf("Lofi", "Pop", "Rock", "Electronic", "Jazz", "Classical", "Hip Hop", "Ambient")
@@ -355,17 +413,12 @@ fun SearchScreen(vm: MusicVM) {
                     colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
             }
-            if (YouTube.configured) {
-                Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf(false to "Songs", true to "Live").forEach { (isLive, label) ->
-                        val on = live == isLive
-                        Text(label, color = if (on) Color.White else Color.White.copy(0.7f), fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clip(CircleShape)
-                                .background(if (on) Accent else Color.White.copy(0.12f))
-                                .clickable { live = isLive; doSearch() }
-                                .padding(horizontal = 18.dp, vertical = 8.dp))
-                    }
-                }
+            if (YouTube.configured && pb != null) {
+                PrismalSegmentedControl(
+                    labels = listOf("Songs", "Live"), selectedIndex = if (live) 1 else 0,
+                    onSelected = { live = it == 1; doSearch() }, backdrop = pb, textColor = Color.White,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth()
+                )
             } else Spacer(Modifier.height(16.dp))
             vm.searchError?.let { Text(it, color = Accent, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) }
         }
@@ -481,7 +534,8 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
         val g2 = glow[(Math.abs(t.id.hashCode()) + 1) % glow.size]
         val g3 = glow[(Math.abs(t.id.hashCode()) + 4) % glow.size]
         val bd = rememberLayerBackdrop()
-        Box(Modifier.fillMaxSize().layerBackdrop(bd).background(Color.Black)) {
+        val pbd = rememberPrismalGlassLayer()
+        Box(Modifier.fillMaxSize().layerBackdrop(bd).prismalGlassLayer(pbd).background(Color.Black)) {
         Box(Modifier.offset(x = (-90).dp, y = 40.dp).size(420.dp).background(Brush.radialGradient(listOf(g1.copy(alpha = 0.55f), Color.Transparent))))
         Box(Modifier.offset(x = 110.dp, y = 330.dp).size(400.dp).background(Brush.radialGradient(listOf(g2.copy(alpha = 0.5f), Color.Transparent))))
         Box(Modifier.offset(x = (-60).dp, y = 520.dp).size(380.dp).background(Brush.radialGradient(listOf(g3.copy(alpha = 0.45f), Color.Transparent))))
@@ -525,9 +579,14 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
                 }
             }
             if (t.durationSec > 0) {
-            Slider(value = vm.pos.toFloat().coerceIn(0f, dur.toFloat()), onValueChange = { vm.seek(it.toLong()) },
+            PrismalGlassSlider(
+                value = { vm.pos.toFloat().coerceIn(0f, dur.toFloat()) },
+                onValueChange = { vm.seek(it.toLong()) },
                 valueRange = 0f..dur.toFloat(),
-                colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(0.25f)))
+                visibilityThreshold = 1f,
+                backdrop = pbd,
+                modifier = Modifier.fillMaxWidth()
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(fmt(vm.pos), fontSize = 12.sp, color = Color.White.copy(0.6f))
                 Text("-" + fmt(dur - vm.pos), fontSize = 12.sp, color = Color.White.copy(0.6f))
@@ -551,6 +610,80 @@ fun NowPlaying(vm: MusicVM, close: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+fun Blob(color: Color, size: Dp, x: Dp, y: Dp, animate: Boolean, ms: Int) {
+    val shift = if (animate) {
+        rememberInfiniteTransition(label = "blob").animateFloat(
+            -1f, 1f, infiniteRepeatable(tween(ms, easing = LinearEasing), RepeatMode.Reverse), label = "s")
+    } else null
+    Box(Modifier.offset(x, y).size(size)
+        .graphicsLayer { val s = shift?.value ?: 0f; translationX = s * 40.dp.toPx(); translationY = s * 28.dp.toPx() }
+        .background(Brush.radialGradient(listOf(color.copy(alpha = 0.5f), Color.Transparent))))
+}
+
+/** Slowly drifting colour glows that follow the current song. Sampled by the Prismal glass controls. */
+@Composable
+fun AmbientBackground(vm: MusicVM, modifier: Modifier = Modifier) {
+    val pal = listOf(Color(0xFFFA2D48), Color(0xFF7B3FE4), Color(0xFF2F80ED), Color(0xFFFA7333), Color(0xFF33BF8C))
+    val seed = Math.abs((vm.current?.id ?: "x").hashCode())
+    val c1 by animateColorAsState(pal[seed % pal.size], tween(1400), label = "c1")
+    val c2 by animateColorAsState(pal[(seed + 2) % pal.size], tween(1400), label = "c2")
+    Box(modifier.background(Brush.verticalGradient(listOf(Color(0xFF1A0A14), Color(0xFF0B0B10), Color(0xFF0B0B10))))) {
+        Blob(c1, 420.dp, (-120).dp, (-60).dp, vm.ambient, 9000)
+        Blob(c2, 380.dp, 120.dp, 260.dp, vm.ambient, 11000)
+        Blob(c1, 320.dp, (-80).dp, 520.dp, vm.ambient, 13000)
+    }
+}
+
+@Composable
+fun SettingsScreen(vm: MusicVM, onClose: () -> Unit) {
+    BackHandler(onBack = onClose)
+    val pb = LocalPrismal.current
+    val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+    val label = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B10).copy(alpha = 0.9f))) {
+        LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 20.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(onClose) { Icon(Icons.Filled.Close, "Close") }
+                }
+            }
+            if (pb != null) {
+                item {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Animated background", fontSize = 17.sp, modifier = Modifier.weight(1f))
+                        PrismalGlassToggle(selected = { vm.ambient }, onSelect = { vm.setAmbient(it) }, backdrop = pb)
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Show Recently Played", fontSize = 17.sp, modifier = Modifier.weight(1f))
+                        PrismalGlassToggle(selected = { vm.showRecent }, onSelect = { vm.setShowRecent(it) }, backdrop = pb)
+                    }
+                }
+                item { Text("Sleep timer", fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 10.dp)) }
+                item {
+                    PrismalRulerSelector(
+                        value = vm.sleepMinutes, onValueChange = { vm.setSleep(it) }, valueRange = 0..120, backdrop = pb,
+                        step = 5, majorTickEvery = 3, valueLabel = { if (it == 0) "Off" else "$it min" },
+                        textStyle = label, textColor = Color.White, modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                item { Text("Playback speed", fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 10.dp)) }
+                item {
+                    PrismalHorizontalSelector(
+                        labels = speeds.map { if (it == 1f) "1x" else "${it}x" },
+                        selectedIndex = speeds.indexOf(vm.speed).coerceAtLeast(0),
+                        onSelected = { vm.setSpeed(speeds[it]) },
+                        backdrop = pb, textStyle = label, textColor = Color.White, modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
     }
 }

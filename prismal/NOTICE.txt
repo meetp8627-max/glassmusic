@@ -1,0 +1,3 @@
+This module is a copy of PrismalAGSL by Saurav Sajeev (styropyr0),
+https://github.com/styropyr0/PrismalAGSL, used under the MIT License (see LICENSE).
+Source file headers keep their original notices.
