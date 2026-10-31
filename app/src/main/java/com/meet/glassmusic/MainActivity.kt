@@ -45,6 +45,15 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
+import com.styropyr0.prismal.PrismalGlassSurface
+import com.styropyr0.prismal.shapes.PrismalCapsule
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.TextStyle
 import com.styropyr0.prismal.components.PrismalGlassMenu
@@ -324,15 +333,8 @@ fun RadioScreen(vm: MusicVM) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
         item {
             Text("Radio", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp))
-            Glass(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), CircleShape) {
-                TextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    placeholder = { Text("Search live stations") },
-                    leadingIcon = { Icon(Icons.Filled.Search, null) },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { vm.loadRadio(name = q) }),
-                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
-            }
+            GlassSearchField(query = q, onQueryChange = { q = it }, placeholder = "Search live stations",
+                onSearch = { vm.loadRadio(name = q) }, onClear = { q = ""; vm.loadRadio(tag = chips[sel].second) })
             Spacer(Modifier.height(12.dp))
         }
         item {
@@ -405,15 +407,8 @@ fun SearchScreen(vm: MusicVM) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 220.dp)) {
         item {
             Text("Search", fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 14.dp))
-            Glass(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), CircleShape) {
-                TextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    placeholder = { Text("Artists, songs, albums") },
-                    leadingIcon = { Icon(Icons.Filled.Search, null) },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { doSearch() }),
-                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
-            }
+            GlassSearchField(query = q, onQueryChange = { q = it }, placeholder = "Artists, songs, albums",
+                onSearch = { doSearch() }, onClear = { q = ""; vm.clearSearch() })
             if (YouTube.configured && pb != null) {
                 PrismalSegmentedControl(
                     labels = listOf("Songs", "Live"), selectedIndex = if (live) 1 else 0,
@@ -684,6 +679,60 @@ fun SettingsScreen(vm: MusicVM, onClose: () -> Unit) {
                         backdrop = pb, textStyle = label, textColor = Color.White, modifier = Modifier.fillMaxWidth()
                     )
                 }
+            }
+        }
+    }
+}
+
+/** Search field with the iOS-style "Cancel" slide-in and focus squish (after the PrismalAGSL demo, MIT). */
+@Composable
+fun GlassSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    onSearch: () -> Unit,
+    onClear: () -> Unit
+) {
+    val pb = LocalPrismal.current ?: return
+    var focused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val active = focused || query.isNotEmpty()
+    val spec = spring<Float>(dampingRatio = 0.84f, stiffness = 420f)
+    val cancelSpace by animateDpAsState(if (active) 66.dp else 0.dp, spring(dampingRatio = 0.84f, stiffness = 420f), label = "cancelSpace")
+    val cancelAlpha by animateFloatAsState(if (active) 1f else 0f, spec, label = "cancelAlpha")
+    val scale by animateFloatAsState(if (active) 0.985f else 1f, spec, label = "fieldScale")
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        val fieldWidth = maxWidth - cancelSpace
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            PrismalGlassSurface(
+                backdrop = pb,
+                shape = { PrismalCapsule() },
+                modifier = Modifier.width(fieldWidth).height(48.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+            ) {
+                Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.Search, null, Modifier.size(18.dp), tint = Color.White.copy(0.7f))
+                    BasicTextField(
+                        value = query, onValueChange = onQueryChange,
+                        modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused },
+                        singleLine = true,
+                        textStyle = TextStyle(color = Color.White, fontSize = 17.sp),
+                        cursorBrush = SolidColor(Accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onSearch(); focusManager.clearFocus() }),
+                        decorationBox = { inner ->
+                            if (query.isEmpty()) Text(placeholder, color = Color.White.copy(0.55f), fontSize = 17.sp, maxLines = 1)
+                            inner()
+                        }
+                    )
+                    if (query.isNotEmpty()) {
+                        Icon(Icons.Filled.Close, "Clear", Modifier.size(18.dp).clickable { onClear() }, tint = Color.White.copy(0.7f))
+                    }
+                }
+            }
+            Box(Modifier.width(cancelSpace).graphicsLayer { alpha = cancelAlpha }, contentAlignment = Alignment.CenterEnd) {
+                Text("Cancel", color = Accent, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip,
+                    modifier = Modifier.width(56.dp).clickable(enabled = active) { onClear(); focusManager.clearFocus() })
             }
         }
     }

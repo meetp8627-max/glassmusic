@@ -246,6 +246,8 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     }
     fun closeArtist() { artistName = null }
 
+    fun clearSearch() { results = emptyList(); ytResults = emptyList(); searchError = null }
+
     fun playAt(i: Int) {
         val p = player ?: return
         p.seekTo(i, 0); p.play(); current = queue.getOrNull(i)
