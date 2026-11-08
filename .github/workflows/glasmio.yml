@@ -1,0 +1,40 @@
+name: Glasmio edition
+on:
+  push:
+    paths: ['*.zip']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack an uploaded zip
+        run: |
+          z=$(ls -t *.zip 2>/dev/null | head -1 || true)
+          if [ -n "$z" ]; then
+            rm -rf /tmp/gm && mkdir /tmp/gm
+            unzip -q -o "$z" -d /tmp/gm
+            src=$(dirname "$(find /tmp/gm -maxdepth 2 -name settings.gradle.kts | head -1)")
+            rsync -a --exclude='.git' --exclude='.github' "$src"/ ./
+            git rm -q -f "$z"
+            git config user.name "github-actions"
+            git config user.email "actions@users.noreply.github.com"
+            git add -A
+            git commit -m "Apply uploaded zip" || true
+            git push || true
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.6.0
+      - name: Build Glasmio edition
+        run: gradle -p glasmio-edition :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlassMusic-Glasmio-edition-apk
+          path: glasmio-edition/app/build/outputs/apk/debug/*.apk
