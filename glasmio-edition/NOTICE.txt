@@ -1,0 +1,2 @@
+This edition uses Glasmio (https://github.com/NEORUAA/Glasmio), Apache License 2.0,
+through its published Maven artifacts. Apache-2.0 notices ship inside those artifacts.
