@@ -11,8 +11,8 @@ android {
         applicationId = "com.meet.glassmusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 15
+        versionName = "1.5.0-classic"
     }
 
     compileOptions {

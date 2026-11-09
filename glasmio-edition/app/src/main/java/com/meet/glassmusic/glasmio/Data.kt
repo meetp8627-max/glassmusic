@@ -126,6 +126,22 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     var sleepMinutes by mutableIntStateOf(0)
     var speed by mutableFloatStateOf(1f)
     private var sleepJob: Job? = null
+    var displayName by mutableStateOf(prefs.getString("displayName", "") ?: "")
+
+    fun changeDisplayName(n: String) { displayName = n; prefs.edit().putString("displayName", n).apply() }
+    fun clearRecent() { recent.clear(); persistRecent() }
+    fun clearLibrary() { liked.clear(); savedYt.clear(); persist() }
+    fun reorderQueue(newList: List<Track>) {
+        val p = player ?: return
+        val cur = current
+        val pos = p.currentPosition
+        val wasPlaying = p.isPlaying
+        val idx = newList.indexOfFirst { it.id == cur?.id }.coerceAtLeast(0)
+        queue = newList
+        p.setMediaItems(newList.map { MediaItem.fromUri(it.url) }, idx, pos)
+        p.prepare()
+        if (wasPlaying) p.play()
+    }
 
     fun toggleAmbient(b: Boolean) { ambient = b; prefs.edit().putBoolean("ambient", b).apply() }
     fun toggleShowRecent(b: Boolean) { showRecent = b; prefs.edit().putBoolean("showRecent", b).apply() }

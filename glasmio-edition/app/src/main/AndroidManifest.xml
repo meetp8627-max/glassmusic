@@ -7,7 +7,7 @@
     <application
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="GlassMusic Glasmio"
+        android:label="GlassMusic 2.0"
         android:theme="@style/Theme.Glasmio"
         android:allowBackup="false"
         android:supportsRtl="true"
