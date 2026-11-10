@@ -1,5 +1,6 @@
 package com.meet.glassmusic.glasmio
 
+import android.app.ActivityManager
 import android.content.Context
 import android.media.AudioManager
 import android.os.Bundle
@@ -8,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,15 +26,17 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,6 +44,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +59,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import io.github.neoruaa.glasmio.core.*
 import io.github.neoruaa.glasmio.glass.*
 import io.github.neoruaa.glasmio.icons.*
@@ -62,12 +68,22 @@ import io.github.neoruaa.glasmio.scaffold.*
 import io.github.neoruaa.glasmio.ui.*
 import kotlin.math.roundToInt
 
+val LocalLite = staticCompositionLocalOf { false }
+val LocalTrackActions = staticCompositionLocalOf<(Track) -> Unit> { {} }
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent { GlasmioTheme { GlasmioApp() } }
     }
+}
+
+fun isLowEnd(ctx: Context): Boolean {
+    val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val info = ActivityManager.MemoryInfo()
+    am.getMemoryInfo(info)
+    return am.isLowRamDevice || info.totalMem < 3_500_000_000L
 }
 
 @Composable
@@ -93,10 +109,16 @@ fun GlasmioApp(vm: MusicVM = viewModel()) {
 
 @Composable
 fun AppShell(vm: MusicVM) {
+    val ctx = LocalContext.current
+    val auto = remember { isLowEnd(ctx) }
+    val lite = when (vm.perfMode) { 1 -> true; 2 -> false; else -> auto }
     var tab by remember { mutableIntStateOf(0) }
     var nowPlaying by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
+    var licenses by remember { mutableStateOf(false) }
     var confirm by remember { mutableIntStateOf(0) }
+    var actionTrack by remember { mutableStateOf<Track?>(null) }
+    var actionsVisible by remember { mutableStateOf(false) }
     val homeState = rememberLazyListState()
     val radioState = rememberLazyListState()
     val libraryState = rememberLazyListState()
@@ -111,72 +133,96 @@ fun AppShell(vm: MusicVM) {
             GlasmioTabItem(3, "Search", SfSymbol.Search),
         )
     }
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().nestedScroll(navScroll.nestedScrollConnection)) {
-            Crossfade(targetState = tab, label = "tab") { t ->
-                when (t) {
-                    0 -> HomePage(vm, homeState) { settings = true }
-                    1 -> RadioPage(vm, radioState)
-                    2 -> LibraryPage(vm, libraryState)
-                    else -> SearchPage(vm, searchState)
+    val page: @Composable (Int) -> Unit = { t ->
+        when (t) {
+            0 -> HomePage(vm, homeState) { settings = true }
+            1 -> RadioPage(vm, radioState)
+            2 -> LibraryPage(vm, libraryState)
+            else -> SearchPage(vm, searchState)
+        }
+    }
+    CompositionLocalProvider(
+        LocalLite provides lite,
+        LocalTrackActions provides { t -> actionTrack = t; actionsVisible = true },
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().nestedScroll(navScroll.nestedScrollConnection)) {
+                if (lite) page(tab) else Crossfade(targetState = tab, label = "tab") { t -> page(t) }
+            }
+            Column(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .padding(horizontal = 12.dp).padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                vm.current?.let { MiniBar(vm, it, lite) { nowPlaying = true } }
+                if (lite) {
+                    LiteBottomBar(tab) { tab = it }
+                } else {
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .glasmioNavigationScrollHint(navScroll.scrollHintProgress)
+                            .navigationBarsPadding(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        GlasmioNavigationBar(
+                            items = tabs,
+                            selectedKey = tab,
+                            onSelected = { tab = it },
+                            onExpand = { navScroll.expand() },
+                            compactProgress = navScroll.compactProgress,
+                            compactSize = 48.dp,
+                        )
+                    }
                 }
             }
-        }
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .padding(horizontal = 12.dp).padding(bottom = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            vm.current?.let { MiniBar(vm, it) { nowPlaying = true } }
-            Box(
-                Modifier.fillMaxWidth()
-                    .glasmioNavigationScrollHint(navScroll.scrollHintProgress)
-                    .navigationBarsPadding(),
-                contentAlignment = Alignment.Center,
+            GlasmioBottomSheet(
+                visible = nowPlaying,
+                skipPartiallyExpanded = true,
+                onDismissRequest = { nowPlaying = false },
+                title = "Now Playing",
+            ) { NowPlayingContent(vm) }
+            GlasmioBottomSheet(
+                visible = settings,
+                skipPartiallyExpanded = false,
+                onDismissRequest = { settings = false },
+                title = "Settings",
+            ) { SettingsContent(vm, { confirm = it }, { licenses = true }) }
+            GlasmioBottomSheet(
+                visible = licenses,
+                skipPartiallyExpanded = false,
+                onDismissRequest = { licenses = false },
+                title = "Open-source licenses",
+            ) { LicensesContent() }
+            GlasmioBottomSheet(
+                visible = vm.artistName != null,
+                skipPartiallyExpanded = false,
+                onDismissRequest = { vm.closeArtist() },
+                title = "Artist",
+            ) { ArtistContent(vm) }
+            GlasmioBottomSheet(
+                visible = actionsVisible,
+                skipPartiallyExpanded = false,
+                onDismissRequest = { actionsVisible = false },
+                title = "Song",
             ) {
-                GlasmioNavigationBar(
-                    items = tabs,
-                    selectedKey = tab,
-                    onSelected = { tab = it },
-                    onExpand = { navScroll.expand() },
-                    compactProgress = navScroll.compactProgress,
-                    compactSize = 48.dp,
-                )
+                actionTrack?.let { t -> ActionsContent(vm, t) { actionsVisible = false } }
             }
-        }
-        GlasmioBottomSheet(
-            visible = nowPlaying,
-            skipPartiallyExpanded = true,
-            onDismissRequest = { nowPlaying = false },
-            title = "Now Playing",
-        ) { NowPlayingContent(vm) }
-        GlasmioBottomSheet(
-            visible = settings,
-            skipPartiallyExpanded = false,
-            onDismissRequest = { settings = false },
-            title = "Settings",
-        ) { SettingsContent(vm) { confirm = it } }
-        GlasmioBottomSheet(
-            visible = vm.artistName != null,
-            skipPartiallyExpanded = false,
-            onDismissRequest = { vm.closeArtist() },
-            title = "Artist",
-        ) { ArtistContent(vm) }
-        GlasmioAlertDialog(
-            onDismissRequest = { confirm = 0 },
-            title = if (confirm == 1) "Clear Recently Played?" else "Clear Library?",
-            message = if (confirm == 1) "Your listening history on this device will be removed."
-                      else "All songs you added with the heart will be removed.",
-            buttons = listOf(
-                GlasmioAlertButtonSpec("Cancel", { confirm = 0 }, GlasmioAlertButtonRole.Cancel),
-                GlasmioAlertButtonSpec(
-                    "Clear",
-                    { if (confirm == 1) vm.clearRecent() else vm.clearLibrary(); confirm = 0 },
-                    GlasmioAlertButtonRole.Destructive,
+            GlasmioAlertDialog(
+                onDismissRequest = { confirm = 0 },
+                title = if (confirm == 1) "Clear Recently Played?" else "Clear Library?",
+                message = if (confirm == 1) "Your listening history on this device will be removed."
+                          else "All songs you added with the heart will be removed.",
+                buttons = listOf(
+                    GlasmioAlertButtonSpec("Cancel", { confirm = 0 }, GlasmioAlertButtonRole.Cancel),
+                    GlasmioAlertButtonSpec(
+                        "Clear",
+                        { if (confirm == 1) vm.clearRecent() else vm.clearLibrary(); confirm = 0 },
+                        GlasmioAlertButtonRole.Destructive,
+                    ),
                 ),
-            ),
-            visible = confirm != 0,
-        )
+                visible = confirm != 0,
+            )
+        }
     }
 }
 
@@ -184,10 +230,22 @@ fun AppShell(vm: MusicVM) {
 
 @Composable
 fun Cover(url: String, size: Dp, radius: Dp = 10.dp) {
+    val ctx = LocalContext.current
+    val u = remember(url, size) {
+        if (size <= 64.dp && url.contains("jamendo.com")) url.replace(Regex("width=\\d+"), "width=150") else url
+    }
+    val request = remember(u) { ImageRequest.Builder(ctx).data(u).crossfade(false).allowRgb565(true).build() }
     AsyncImage(
-        model = url, contentDescription = null, contentScale = ContentScale.Crop,
+        model = request, contentDescription = null, contentScale = ContentScale.Crop,
         modifier = Modifier.size(size).clip(RoundedCornerShape(radius)).background(GlasmioTheme.colors.separator),
     )
+}
+
+@Composable
+fun RowIcon(symbol: SfSymbol, desc: String, tint: Color, onClick: () -> Unit) {
+    Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        SfIcon(symbol, desc, tint = tint)
+    }
 }
 
 @Composable
@@ -206,27 +264,22 @@ val MixPalette = listOf(
 )
 
 @Composable
-fun MixCard(name: String, art: String, index: Int, onClick: () -> Unit) {
+fun MixCard(name: String, index: Int, onClick: () -> Unit) {
     val ts = GlasmioTheme.textStyles
     val (c1, c2) = MixPalette[index % MixPalette.size]
     Box(
-        Modifier.size(width = 200.dp, height = 124.dp).clip(RoundedCornerShape(22.dp))
+        Modifier.size(width = 190.dp, height = 116.dp).clip(RoundedCornerShape(22.dp))
             .background(Brush.linearGradient(listOf(c1, c2))).clickable(onClick = onClick),
     ) {
-        if (art.isNotEmpty()) {
-            AsyncImage(art, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(Color.Transparent))
-            Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(c1.copy(alpha = 0.82f), c2.copy(alpha = 0.9f)))))
-        }
         Text("MADE FOR YOU", style = ts.callout, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(14.dp))
         Text(name, style = ts.title3, color = Color.White, modifier = Modifier.align(Alignment.BottomStart).padding(14.dp))
     }
 }
 
 @Composable
-fun TrackItem(t: Track, vm: MusicVM, first: Boolean, artistLink: Boolean = true, onPlay: () -> Unit) {
+fun TrackItem(t: Track, vm: MusicVM, first: Boolean, onPlay: () -> Unit) {
     val colors = GlasmioTheme.colors
-    var menu by remember { mutableStateOf(false) }
-    val isRadio = t.id.startsWith("radio:")
+    val actions = LocalTrackActions.current
     val liked = vm.isLiked(t)
     GlasmioListRow(
         title = t.title,
@@ -236,31 +289,33 @@ fun TrackItem(t: Track, vm: MusicVM, first: Boolean, artistLink: Boolean = true,
         onClick = onPlay,
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                GlasmioIconButton(onClick = { vm.like(t) }) {
-                    SfIcon(
-                        SfSymbol.Heart,
-                        if (liked) "Remove from Library" else "Add to Library",
-                        tint = if (liked) colors.accent else colors.secondaryContent,
-                    )
-                }
-                GlasmioMenu(
-                    expanded = menu,
-                    onExpandedChange = { menu = it },
-                    itemCount = if (isRadio || !artistLink) 2 else 3,
-                    anchor = { open -> GlasmioIconButton(onClick = open) { SfIcon(SfSymbol.Ellipsis, "More") } },
-                ) { backdrop, close ->
-                    GlasmioMenuItem("Play next", { vm.playNext(t); close() }, backdrop = backdrop)
-                    GlasmioMenuItem(
-                        if (liked) "Remove from Library" else "Add to Library",
-                        { vm.like(t); close() }, backdrop = backdrop,
-                    )
-                    if (!isRadio && artistLink) {
-                        GlasmioMenuItem("Go to artist", { vm.openArtist(t.artist); close() }, backdrop = backdrop)
-                    }
-                }
+                RowIcon(
+                    SfSymbol.Heart,
+                    if (liked) "Remove from Library" else "Add to Library",
+                    if (liked) colors.accent else colors.secondaryContent,
+                ) { vm.like(t) }
+                RowIcon(SfSymbol.Ellipsis, "More", colors.secondaryContent) { actions(t) }
             }
         },
     )
+}
+
+/** Shows the first rows only; "Show all" adds the rest. Keeps long lists cheap on slow phones. */
+@Composable
+fun TrackGroup(list: List<Track>, vm: MusicVM, onPlay: (Int) -> Unit) {
+    val cap = if (LocalLite.current) 8 else 14
+    var all by remember(list.size) { mutableStateOf(false) }
+    val shown = if (all) list else list.take(cap)
+    Column {
+        GlasmioGroupedList {
+            shown.forEachIndexed { i, t -> TrackItem(t, vm, i == 0) { onPlay(i) } }
+        }
+        if (list.size > cap && !all) {
+            GlasmioButton(onClick = { all = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("Show all ${list.size}")
+            }
+        }
+    }
 }
 
 @Composable
@@ -279,29 +334,72 @@ fun HeroCard(t: Track, onPlay: () -> Unit) {
 }
 
 @Composable
-fun MiniBar(vm: MusicVM, t: Track, onOpen: () -> Unit) {
+fun MiniContent(vm: MusicVM, t: Track) {
     val colors = GlasmioTheme.colors
     val ts = GlasmioTheme.textStyles
-    GlassSurface(
-        modifier = Modifier.fillMaxWidth().height(64.dp),
-        shape = RoundedCornerShape(32.dp),
-        onClick = onOpen,
-        contentAlignment = Alignment.CenterStart,
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Cover(t.art, 44.dp, 12.dp)
+        Column(Modifier.weight(1f)) {
+            Text(t.title, style = ts.headline, color = colors.content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(t.artist, style = ts.callout, color = colors.secondaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        RowIcon(if (vm.playing) SfSymbol.PauseFilled else SfSymbol.PlayFilled, if (vm.playing) "Pause" else "Play", colors.content) { vm.toggle() }
+        RowIcon(SfSymbol.ForwardFilled, "Next", colors.content) { vm.next() }
+    }
+}
+
+@Composable
+fun MiniBar(vm: MusicVM, t: Track, lite: Boolean, onOpen: () -> Unit) {
+    val colors = GlasmioTheme.colors
+    val shape = RoundedCornerShape(32.dp)
+    if (lite) {
+        Box(
+            Modifier.fillMaxWidth().height(64.dp).clip(shape).background(colors.groupedBackground)
+                .border(0.5.dp, colors.separator, shape).clickable(onClick = onOpen),
+        ) { MiniContent(vm, t) }
+    } else {
+        GlassSurface(
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            shape = shape,
+            onClick = onOpen,
+            contentAlignment = Alignment.CenterStart,
+        ) { MiniContent(vm, t) }
+    }
+}
+
+@Composable
+fun LiteBottomBar(selected: Int, onSelect: (Int) -> Unit) {
+    val colors = GlasmioTheme.colors
+    val ts = GlasmioTheme.textStyles
+    val items = remember {
+        listOf(
+            Triple(0, "Home", SfSymbol.HouseFilled),
+            Triple(1, "Radio", SfSymbol.RadioWaves),
+            Triple(2, "Library", SfSymbol.MusicNoteList),
+            Triple(3, "Search", SfSymbol.Search),
+        )
+    }
+    val shape = RoundedCornerShape(30.dp)
+    Box(Modifier.fillMaxWidth().navigationBarsPadding()) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxWidth().clip(shape).background(colors.groupedBackground)
+                .border(0.5.dp, colors.separator, shape).padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
         ) {
-            Cover(t.art, 44.dp, 12.dp)
-            Column(Modifier.weight(1f)) {
-                Text(t.title, style = ts.headline, color = colors.content, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(t.artist, style = ts.callout, color = colors.secondaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            items.forEach { (key, label, symbol) ->
+                val on = key == selected
+                Column(
+                    Modifier.weight(1f).clickable { onSelect(key) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    SfIcon(symbol, label, tint = if (on) colors.accent else colors.secondaryContent)
+                    Text(label, style = ts.callout, color = if (on) colors.accent else colors.secondaryContent)
+                }
             }
-            GlasmioIconButton(onClick = { vm.toggle() }) {
-                SfIcon(if (vm.playing) SfSymbol.PauseFilled else SfSymbol.PlayFilled, if (vm.playing) "Pause" else "Play")
-            }
-            GlasmioIconButton(onClick = { vm.next() }) { SfIcon(SfSymbol.ForwardFilled, "Next") }
         }
     }
 }
@@ -312,10 +410,11 @@ fun MiniBar(vm: MusicVM, t: Track, onOpen: () -> Unit) {
 fun HomePage(vm: MusicVM, listState: LazyListState, onSettings: () -> Unit) {
     val colors = GlasmioTheme.colors
     val ts = GlasmioTheme.textStyles
+    val lite = LocalLite.current
     val version = appVersion()
     GlasmioPinnedListPage(
         title = "Home",
-        subtitle = "GlassMusic $version - Glasmio",
+        subtitle = "Version $version",
         listState = listState,
         bottomPadding = 190.dp,
         actions = { GlasmioIconButton(onClick = onSettings) { SfIcon(SfSymbol.Gearshape, "Settings") } },
@@ -331,17 +430,15 @@ fun HomePage(vm: MusicVM, listState: LazyListState, onSettings: () -> Unit) {
             item { SectionHeader("Made for You") }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
-                    itemsIndexed(vm.mixes) { i, mix ->
-                        MixCard(mix.first, mix.second.firstOrNull()?.art ?: "", i) { vm.play(mix.second, 0) }
-                    }
+                    itemsIndexed(vm.mixes) { i, mix -> MixCard(mix.first, i) { vm.play(mix.second, 0) } }
                 }
             }
         }
-        if (vm.trending.size > 1) {
+        if (!lite && vm.trending.size > 1) {
             item { SectionHeader("Trending this week") }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
-                    itemsIndexed(vm.trending.drop(1)) { i, t ->
+                    itemsIndexed(vm.trending.drop(1).take(10)) { i, t ->
                         Column(Modifier.width(140.dp).clickable { vm.play(vm.trending, i + 1) }) {
                             Cover(t.art, 140.dp, 20.dp)
                             Text(t.title, style = ts.callout, color = colors.content, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -355,18 +452,14 @@ fun HomePage(vm: MusicVM, listState: LazyListState, onSettings: () -> Unit) {
         if (vm.showRecent && vm.recent.isNotEmpty()) {
             item { SectionHeader("Recently Played") }
             item {
+                val list = vm.recent.toList().take(8)
                 GlasmioGroupedList {
-                    val list = vm.recent.toList().take(8)
                     list.forEachIndexed { i, t -> TrackItem(t, vm, i == 0) { vm.play(list, i) } }
                 }
             }
         }
-        item { SectionHeader("Popular this month") }
-        item {
-            GlasmioGroupedList {
-                vm.fresh.forEachIndexed { i, t -> TrackItem(t, vm, i == 0) { vm.play(vm.fresh, i) } }
-            }
-        }
+        item { SectionHeader(if (lite) "Trending" else "Popular this month") }
+        item { TrackGroup(if (lite) vm.trending else vm.fresh, vm) { i -> vm.play(if (lite) vm.trending else vm.fresh, i) } }
     }
 }
 
@@ -389,11 +482,7 @@ fun RadioPage(vm: MusicVM, listState: LazyListState) {
         vm.radioStatus?.let { s ->
             item { Text(s, color = colors.secondaryContent, modifier = Modifier.padding(4.dp)) }
         }
-        item {
-            GlasmioGroupedList {
-                vm.stations.forEachIndexed { i, s -> TrackItem(s, vm, i == 0) { vm.play(vm.stations, i) } }
-            }
-        }
+        item { TrackGroup(vm.stations, vm) { i -> vm.play(vm.stations, i) } }
     }
 }
 
@@ -411,10 +500,8 @@ fun LibraryPage(vm: MusicVM, listState: LazyListState) {
             }
         } else {
             item {
-                GlasmioGroupedList {
-                    val list = vm.liked.toList()
-                    list.forEachIndexed { i, t -> TrackItem(t, vm, i == 0) { vm.play(list, i) } }
-                }
+                val list = vm.liked.toList()
+                TrackGroup(list, vm) { i -> vm.play(list, i) }
             }
         }
     }
@@ -454,16 +541,34 @@ fun SearchPage(vm: MusicVM, listState: LazyListState) {
                 }
             }
         } else {
-            item {
-                GlasmioGroupedList {
-                    vm.results.forEachIndexed { i, t -> TrackItem(t, vm, i == 0) { vm.play(vm.results, i) } }
-                }
-            }
+            item { TrackGroup(vm.results, vm) { i -> vm.play(vm.results, i) } }
         }
     }
 }
 
 // ---------- sheets ----------
+
+@Composable
+fun SeekSection(vm: MusicVM, t: Track) {
+    val colors = GlasmioTheme.colors
+    val ts = GlasmioTheme.textStyles
+    if (t.durationSec <= 0) {
+        Text("LIVE", style = ts.headline, color = colors.accent)
+        return
+    }
+    val dur = ((vm.player?.duration ?: 0L).takeIf { it > 0 } ?: (t.durationSec * 1000L)).coerceAtLeast(1L)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        GlasmioSlider(
+            value = (vm.pos.toFloat() / dur).coerceIn(0f, 1f),
+            onValueChange = { vm.seek((it * dur).toLong()) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(fmt(vm.pos), style = ts.callout, color = colors.secondaryContent)
+            Text("-" + fmt(dur - vm.pos), style = ts.callout, color = colors.secondaryContent)
+        }
+    }
+}
 
 @Composable
 fun ColumnScope.NowPlayingContent(vm: MusicVM) {
@@ -476,7 +581,6 @@ fun ColumnScope.NowPlayingContent(vm: MusicVM) {
     }
     val isRadio = t.id.startsWith("radio:")
     var mode by remember { mutableIntStateOf(0) }
-    val dur = ((vm.player?.duration ?: 0L).takeIf { it > 0 } ?: (t.durationSec * 1000L)).coerceAtLeast(1L)
     val ctx = LocalContext.current
     val audio = remember { ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVol = remember { audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
@@ -534,19 +638,7 @@ fun ColumnScope.NowPlayingContent(vm: MusicVM) {
                 modifier = if (isRadio) Modifier else Modifier.clickable { vm.openArtist(t.artist) },
             )
         }
-        if (t.durationSec > 0) {
-            GlasmioSlider(
-                value = (vm.pos.toFloat() / dur).coerceIn(0f, 1f),
-                onValueChange = { vm.seek((it * dur).toLong()) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(fmt(vm.pos), style = ts.callout, color = colors.secondaryContent)
-                Text("-" + fmt(dur - vm.pos), style = ts.callout, color = colors.secondaryContent)
-            }
-        } else {
-            Text("LIVE", style = ts.headline, color = colors.accent)
-        }
+        SeekSection(vm, t)
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -581,7 +673,35 @@ fun ColumnScope.NowPlayingContent(vm: MusicVM) {
 }
 
 @Composable
-fun ColumnScope.SettingsContent(vm: MusicVM, askConfirm: (Int) -> Unit) {
+fun ActionsContent(vm: MusicVM, t: Track, close: () -> Unit) {
+    val colors = GlasmioTheme.colors
+    val ts = GlasmioTheme.textStyles
+    val liked = vm.isLiked(t)
+    val isRadio = t.id.startsWith("radio:")
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Cover(t.art, 56.dp, 12.dp)
+            Column {
+                Text(t.title, style = ts.headline, color = colors.content, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t.artist, style = ts.callout, color = colors.secondaryContent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        GlasmioGroupedList {
+            GlasmioListRow(title = "Play next", showTopSeparator = false, onClick = { vm.playNext(t); close() })
+            GlasmioListRow(
+                title = if (liked) "Remove from Library" else "Add to Library",
+                onClick = { vm.like(t); close() },
+            )
+            if (!isRadio) {
+                GlasmioListRow(title = "Go to artist", onClick = { close(); vm.openArtist(t.artist) })
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+fun ColumnScope.SettingsContent(vm: MusicVM, askConfirm: (Int) -> Unit, openLicenses: () -> Unit) {
     val colors = GlasmioTheme.colors
     val ts = GlasmioTheme.textStyles
     val version = appVersion()
@@ -599,6 +719,17 @@ fun ColumnScope.SettingsContent(vm: MusicVM, askConfirm: (Int) -> Unit) {
                 showTopSeparator = false,
             )
         }
+        GlasmioPreferenceGroupTitle("Performance")
+        GlasmioSegmentedControl(
+            items = listOf(0 to "Auto", 1 to "Lite", 2 to "Full"),
+            selected = vm.perfMode,
+            onSelected = { vm.changePerf(it) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "Lite turns off the heaviest glass effects for smoother scrolling on slower phones.",
+            style = ts.callout, color = colors.secondaryContent, modifier = Modifier.padding(4.dp),
+        )
         GlasmioPreferenceGroupTitle("Home")
         GlasmioGroupedList {
             GlasmioSwitchPreference(
@@ -630,10 +761,36 @@ fun ColumnScope.SettingsContent(vm: MusicVM, askConfirm: (Int) -> Unit) {
         GlasmioPreferenceGroupTitle("About")
         GlasmioGroupedList {
             GlasmioListRow(title = "Version", detail = version, showTopSeparator = false)
-            GlasmioListRow(title = "Edition", detail = "Glasmio")
+            GlasmioListRow(title = "Open-source licenses", onClick = openLicenses)
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+fun ColumnScope.LicensesContent() {
+    val colors = GlasmioTheme.colors
+    val ts = GlasmioTheme.textStyles
+    val entries = remember {
+        listOf(
+            "Glasmio" to "Apache License 2.0",
+            "Coil" to "Apache License 2.0",
+            "AndroidX Compose and Media3" to "Apache License 2.0",
+            "Jamendo" to "Music under Creative Commons licenses",
+            "Radio Browser" to "Community radio directory",
+        )
+    }
+    Column(
+        Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        GlasmioGroupedList {
+            entries.forEachIndexed { i, (name, license) ->
+                GlasmioListRow(title = name, detail = license, showTopSeparator = i > 0)
+            }
         }
         Text(
-            "Built with Glasmio (Apache-2.0).",
+            "Full license texts and notices are in THIRD_PARTY_NOTICES.md in the project repository.",
             style = ts.callout, color = colors.secondaryContent, modifier = Modifier.padding(4.dp),
         )
         Spacer(Modifier.height(16.dp))
@@ -656,9 +813,7 @@ fun ColumnScope.ArtistContent(vm: MusicVM) {
             style = ts.callout, color = colors.secondaryContent,
         )
         GlasmioButton(onClick = { if (tracks.isNotEmpty()) vm.play(tracks, 0) }) { Text("Play") }
-        GlasmioGroupedList {
-            tracks.forEachIndexed { i, t -> TrackItem(t, vm, i == 0, artistLink = false) { vm.play(tracks, i) } }
-        }
+        TrackGroup(tracks, vm) { i -> vm.play(tracks, i) }
         Spacer(Modifier.height(16.dp))
     }
 }

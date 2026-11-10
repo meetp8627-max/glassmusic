@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val keystorePath: String? = System.getenv("KEYSTORE_FILE")
+
 android {
     namespace = "com.meet.glassmusic.glasmio"
     compileSdk = 37
@@ -11,8 +13,28 @@ android {
         applicationId = "com.meet.glassmusic.glasmio"
         minSdk = 33
         targetSdk = 37
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 3
+        versionName = (project.findProperty("appVersionName") as String?) ?: "2.1.0"
+    }
+
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles("proguard-rules.pro")
+            signingConfig = signingConfigs.getByName(if (keystorePath != null) "release" else "debug")
+        }
     }
 
     buildFeatures { compose = true }

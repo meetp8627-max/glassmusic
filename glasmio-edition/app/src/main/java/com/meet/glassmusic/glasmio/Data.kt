@@ -127,6 +127,8 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
     var speed by mutableFloatStateOf(1f)
     private var sleepJob: Job? = null
     var displayName by mutableStateOf(prefs.getString("displayName", "") ?: "")
+    var perfMode by mutableIntStateOf(prefs.getInt("perf", 0))
+    fun changePerf(m: Int) { perfMode = m; prefs.edit().putInt("perf", m).apply() }
 
     fun changeDisplayName(n: String) { displayName = n; prefs.edit().putString("displayName", n).apply() }
     fun clearRecent() { recent.clear(); persistRecent() }
@@ -220,7 +222,7 @@ class MusicVM(private val app: Application) : AndroidViewModel(app) {
             })
         }, ContextCompat.getMainExecutor(app))
 
-        viewModelScope.launch { while (true) { pos = player?.currentPosition ?: 0L; delay(400) } }
+        viewModelScope.launch { while (true) { val pl = player; if (pl != null && pl.isPlaying) pos = pl.currentPosition; delay(500) } }
 
         load()
     }
