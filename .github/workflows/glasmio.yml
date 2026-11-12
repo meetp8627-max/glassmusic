@@ -1,16 +1,23 @@
-name: Glasmio edition
+name: Build GlassMusic 2.x
+
 on:
   push:
+    branches: ['**']
     paths: ['*.zip']
   workflow_dispatch:
+
 permissions:
   contents: write
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Unpack an uploaded zip
+
+      - name: Unpack an uploaded zip (if there is one)
+        id: unpack
         run: |
           z=$(ls -t *.zip 2>/dev/null | head -1 || true)
           if [ -n "$z" ]; then
@@ -24,17 +31,35 @@ jobs:
             git add -A
             git commit -m "Apply uploaded zip" || true
             git push || true
+            echo "applied=true" >> "$GITHUB_OUTPUT"
           fi
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.6.0
-      - name: Build Glasmio edition
+
+      - name: Build GlassMusic 2.x
         run: gradle -p glasmio-edition :app:assembleDebug --no-daemon
+
       - uses: actions/upload-artifact@v4
         with:
-          name: GlassMusic-Glasmio-edition-apk
+          name: GlassMusic-2.x-debug-apk
           path: glasmio-edition/app/build/outputs/apk/debug/*.apk
+
+      - name: Start a release when the version is new
+        if: steps.unpack.outputs.applied == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep 'appVersionName' glasmio-edition/app/build.gradle.kts | grep -oP '\?: "\K[^"]+' | head -1)
+          if [ -n "$V" ] && ! git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null 2>&1; then
+            echo "New version $V - starting the release workflow."
+            gh workflow run release.yml -f version="$V"
+          else
+            echo "Version $V already released (or not found). No release started."
+          fi
