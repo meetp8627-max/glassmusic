@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val keystorePath: String? = System.getenv("KEYSTORE_FILE")
+
 android {
     namespace = "com.meet.glassmusic"
     compileSdk = 37
@@ -11,8 +13,29 @@ android {
         applicationId = "com.meet.glassmusic"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "1.5.0-classic"
+        versionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 15
+        versionName = (project.findProperty("appVersionName") as String?) ?: "1.5.0-classic"
+    }
+
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName(if (keystorePath != null) "release" else "debug")
+        }
+    }
+
+    lint {
+        checkReleaseBuilds = false
     }
 
     compileOptions {

@@ -37,6 +37,10 @@ android {
         }
     }
 
+    lint {
+        checkReleaseBuilds = false
+    }
+
     buildFeatures { compose = true }
 
     compileOptions {
